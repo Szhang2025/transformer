@@ -1,0 +1,2463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attention Is All You Need – From Tokens to Matrices</title>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+    <script>
+        // Opens the OpenAI tokenizer in a small centered pop-up window
+        function openTokenizerPopup() {
+            const width = 900;
+            const height = 650;
+            const left = (window.screen.width - width) / 2;
+            const top = (window.screen.height - height) / 2;
+            window.open(
+                'https://platform.openai.com/tokenizer',
+                'OpenAITokenizer',
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+            );
+        }
+
+        // Opens the PoloClub Transformer Explainer in a larger pop-up window
+        function openExplainerPopup() {
+            const width = 1200;
+            const height = 800;
+            const left = (window.screen.width - width) / 2;
+            const top = (window.screen.height - height) / 2;
+            window.open(
+                'https://poloclub.github.io/transformer-explainer/',
+                'TransformerExplainer',
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+            );
+        }
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', 'Courier New', monospace;
+            line-height: 1.75;
+            color: #1e2b3a;
+            background: #e6ecf3;
+            padding: 2rem 1rem;
+            display: flex;
+            justify-content: center;
+        }
+        .paper {
+            max-width: 1000px;
+            background: #fefefe;
+            border-radius: 0.5rem;
+            box-shadow: 0 30px 50px -20px rgba(0, 20, 40, 0.4), 0 0 0 1px rgba(0,0,0,0.05);
+            padding: 2.8rem 2.5rem;
+            position: relative;
+            border-left: 1px solid #d0dbe8;
+            border-right: 1px solid #d0dbe8;
+        }
+        .paper::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: repeating-linear-gradient(transparent, transparent 31px, #d9e2ec 31px, #d9e2ec 32px);
+            pointer-events: none;
+            opacity: 0.2;
+            z-index: 0;
+        }
+        .paper > * {
+            position: relative;
+            z-index: 1;
+        }
+        h1 {
+            font-size: 2.1rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: #0b2b4a;
+            margin-bottom: 0.25rem;
+            border-bottom: 3px double #9bb7d4;
+            padding-bottom: 0.5rem;
+        }
+        .subtitle {
+            font-size: 1.1rem;
+            color: #2b4b6e;
+            margin-top: 0.2rem;
+            margin-bottom: 0.5rem;
+        }
+        h2 {
+            font-size: 1.65rem;
+            font-weight: 500;
+            margin-top: 2.6rem;
+            margin-bottom: 1rem;
+            color: #0b2b4a;
+            border-left: 6px solid #2d7fb9;
+            padding-left: 1rem;
+        }
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-top: 1.8rem;
+            margin-bottom: 0.6rem;
+            color: #1e3b5a;
+            background: #eef4fb;
+            display: inline-block;
+            padding: 0.2rem 1rem 0.2rem 0.8rem;
+            border-radius: 0 8px 8px 0;
+        }
+        h4 {
+            font-size: 1.08rem;
+            font-weight: 600;
+            margin-top: 1.4rem;
+            margin-bottom: 0.4rem;
+            color: #1c4b7a;
+        }
+        p {
+            margin-bottom: 0.9rem;
+        }
+        .math-block {
+            background: #f7faff;
+            border-radius: 0.8rem;
+            padding: 1.4rem 1.8rem;
+            margin: 1.4rem 0;
+            border: 1px solid #d0e0f0;
+            overflow-x: auto;
+        }
+        .example-box {
+            background: #ffffff;
+            border-left: 6px solid #2d7fb9;
+            padding: 1.2rem 1.6rem;
+            border-radius: 0.8rem;
+            margin: 1.6rem 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+            border: 1px solid #e2edf9;
+        }
+        .example-box strong {
+            color: #0b2b4a;
+            font-size: 1.05rem;
+        }
+        .note {
+            background: #e8f1fa;
+            padding: 1rem 1.6rem;
+            border-radius: 0.8rem;
+            color: #1e3b5a;
+            margin: 1.2rem 0;
+            border-left: 4px solid #7aa5c4;
+        }
+        .note strong {
+            color: #0b2b4a;
+        }
+        .definition {
+            background: #fff8e8;
+            padding: 1rem 1.6rem;
+            border-radius: 0.8rem;
+            margin: 1.2rem 0;
+            border-left: 5px solid #e0a800;
+            color: #3a2e1a;
+        }
+        .definition strong {
+            color: #7a5b00;
+        }
+        .handwritten {
+            font-family: 'Courier New', 'Segoe UI', monospace;
+            background: #fcfcfc;
+            border: 1px dashed #a0b8d0;
+            padding: 1.2rem 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: inset 0 0 8px #e0e9f2;
+            color: #1a2e44;
+            font-size: 0.98rem;
+        }
+        .matrix-display {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+            margin: 1.2rem 0;
+        }
+        .matrix-display > div {
+            text-align: center;
+        }
+        .caption {
+            text-align: center;
+            font-size: 0.9rem;
+            color: #4f6f8c;
+            margin-top: 0.4rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.4rem 0;
+            font-size: 0.98rem;
+            background: white;
+            border-radius: 0.8rem;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        }
+        th {
+            background: #1c4b7a;
+            color: white;
+            font-weight: 500;
+            padding: 0.7rem 1rem;
+            text-align: left;
+        }
+        td, th {
+            padding: 0.7rem 1rem;
+            border-bottom: 1px solid #d9e6f2;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        .footer {
+            margin-top: 3rem;
+            text-align: center;
+            color: #5b7f9c;
+            font-size: 0.9rem;
+            border-top: 1px solid #c9dff5;
+            padding-top: 1.5rem;
+        }
+        .toc {
+            background: #f2f7fc;
+            border-radius: 1rem;
+            padding: 1.2rem 1.8rem;
+            margin: 1.5rem 0;
+            border: 1px solid #d0e2f2;
+        }
+        .toc ul {
+            margin-left: 1.4rem;
+            margin-top: 0.5rem;
+        }
+        .toc li {
+            margin-bottom: 0.25rem;
+        }
+        .keyterm {
+            background: #d9eaff;
+            padding: 0.05rem 0.4rem;
+            border-radius: 5px;
+            font-weight: 600;
+            color: #0b2b4a;
+        }
+        /* === Button style for pop-up === */
+        .try-button {
+            display: inline-block;
+            background: #1c4b7a;
+            color: white !important;
+            font-weight: 500;
+            padding: 0.55rem 1.4rem;
+            border-radius: 30px;
+            text-decoration: none;
+            margin: 0.6rem 0 0.2rem 0;
+            transition: background 0.15s ease, transform 0.1s ease;
+            box-shadow: 0 3px 8px rgba(28, 75, 122, 0.25);
+            font-size: 0.98rem;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .try-button:hover {
+            background: #2d7fb9;
+            transform: translateY(-1px);
+            box-shadow: 0 5px 12px rgba(28, 75, 122, 0.35);
+        }
+        .try-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 6px rgba(28, 75, 122, 0.3);
+        }
+        .try-button-green {
+            background: #1e6b3a;
+            box-shadow: 0 3px 8px rgba(30, 107, 58, 0.25);
+        }
+        .try-button-green:hover {
+            background: #2a8c4d;
+            box-shadow: 0 5px 12px rgba(30, 107, 58, 0.35);
+        }
+        /* === Appendix styling === */
+        .appendix {
+            margin-top: 3.5rem;
+            padding-top: 2rem;
+            border-top: 3px double #9bb7d4;
+        }
+        .appendix h2 {
+            border-left: 6px solid #e0a800;
+            color: #7a5b00;
+        }
+        .appendix h3 {
+            background: #fff8e8;
+            color: #7a5b00;
+        }
+        .appendix .definition {
+            background: #eef4fb;
+            border-left-color: #2d7fb9;
+            color: #1e3b5a;
+        }
+        .appendix .definition strong {
+            color: #0b2b4a;
+        }
+        .loop-diagram {
+            font-family: 'Courier New', monospace;
+            background: #f7faff;
+            border: 1px solid #d0e0f0;
+            border-radius: 0.8rem;
+            padding: 1.2rem 1.8rem;
+            margin: 1.4rem 0;
+            white-space: pre;
+            overflow-x: auto;
+            font-size: 0.95rem;
+            color: #1a2e44;
+            line-height: 1.5;
+        }
+        /* === Intro styling === */
+        .intro {
+            background: #f0f7ff;
+            border-radius: 1rem;
+            padding: 1.6rem 2rem;
+            margin: 1.8rem 0;
+            border: 1px solid #c9dff5;
+        }
+        .intro h2 {
+            border-left: 6px solid #0b2b4a;
+            margin-top: 0;
+        }
+        .comparison {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            margin: 1.4rem 0;
+        }
+        .comparison > div {
+            flex: 1 1 260px;
+            background: white;
+            border-radius: 0.8rem;
+            padding: 1.2rem 1.4rem;
+            border: 1px solid #d0e0f0;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.03);
+        }
+        .comparison h4 {
+            margin-top: 0;
+            color: #0b2b4a;
+        }
+        .comparison .tag {
+            display: inline-block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.1rem 0.6rem;
+            border-radius: 20px;
+            margin-bottom: 0.4rem;
+        }
+        .tag-old {
+            background: #ffe0e0;
+            color: #a03030;
+        }
+        .tag-new {
+            background: #d9f0e0;
+            color: #1e6b3a;
+        }
+        /* === LSTM/GRU callout styling === */
+        .rnn-box {
+            background: #fdf6ee;
+            border: 1px solid #e8d5b8;
+            border-radius: 1rem;
+            padding: 1.6rem 2rem;
+            margin: 1.8rem 0;
+        }
+        .rnn-box h4 {
+            color: #8a5a20;
+            font-size: 1.15rem;
+            margin-top: 1.4rem;
+        }
+        .rnn-box h4:first-of-type {
+            margin-top: 0.4rem;
+        }
+        .rnn-box .definition {
+            background: #fff4e0;
+            border-left-color: #c88a20;
+            color: #4a3418;
+        }
+        .rnn-box .definition strong {
+            color: #7a5b00;
+        }
+        .rnn-box .math-block {
+            background: #fffaf2;
+            border-color: #e8d5b8;
+        }
+        .rnn-box .note {
+            background: #fdf1dd;
+            border-left-color: #c88a20;
+        }
+        /* === Interactive tools row === */
+        .tools-row {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 1.8rem 0;
+        }
+        .tool-card {
+            flex: 1 1 340px;
+            background: white;
+            border: 1px solid #d0e0f0;
+            border-radius: 1rem;
+            padding: 1.4rem 1.6rem;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        }
+        .tool-card h4 {
+            color: #0b2b4a;
+            font-size: 1.05rem;
+            margin-bottom: 0.4rem;
+        }
+        .tool-card p {
+            font-size: 0.92rem;
+            color: #4f6f8c;
+            margin-bottom: 0.8rem;
+        }
+        /* === Quiz styling === */
+        .quiz {
+            margin-top: 3.5rem;
+            padding-top: 2rem;
+            border-top: 3px double #9bb7d4;
+        }
+        .quiz h2 {
+            border-left: 6px solid #1e6b3a;
+            color: #1e6b3a;
+        }
+        .quiz-intro {
+            background: #e8f5ec;
+            border: 1px solid #b8dcc4;
+            border-radius: 1rem;
+            padding: 1.2rem 1.8rem;
+            margin: 1.4rem 0;
+        }
+        .score-board {
+            position: sticky;
+            top: 0.5rem;
+            z-index: 10;
+            background: #1c4b7a;
+            color: white;
+            padding: 0.8rem 1.4rem;
+            border-radius: 0.8rem;
+            margin: 1.4rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            box-shadow: 0 6px 16px rgba(28, 75, 122, 0.3);
+            font-weight: 500;
+        }
+        .score-board .score-text {
+            font-size: 1rem;
+        }
+        .score-board .score-value {
+            background: #f0f7ff;
+            color: #0b2b4a;
+            padding: 0.2rem 0.9rem;
+            border-radius: 20px;
+            font-weight: 700;
+        }
+        .reset-btn {
+            background: #f0f7ff;
+            color: #1c4b7a;
+            border: none;
+            padding: 0.35rem 1rem;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.88rem;
+            font-family: inherit;
+        }
+        .reset-btn:hover {
+            background: white;
+        }
+        .question {
+            background: white;
+            border: 1px solid #d9e6f2;
+            border-radius: 1rem;
+            padding: 1.4rem 1.8rem;
+            margin: 1.4rem 0;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.03);
+        }
+        .question.correct {
+            border-left: 6px solid #2a8c4d;
+            background: #f4fbf6;
+        }
+        .question.incorrect {
+            border-left: 6px solid #c0392b;
+            background: #fdf5f4;
+        }
+        .question-text {
+            font-weight: 600;
+            color: #0b2b4a;
+            margin-bottom: 0.9rem;
+            font-size: 1.02rem;
+        }
+        .q-num {
+            display: inline-block;
+            background: #eef4fb;
+            color: #1c4b7a;
+            font-size: 0.85rem;
+            font-weight: 700;
+            padding: 0.1rem 0.6rem;
+            border-radius: 6px;
+            margin-right: 0.5rem;
+        }
+        .options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .option {
+            background: #f7faff;
+            border: 1px solid #d0e0f0;
+            border-radius: 0.6rem;
+            padding: 0.7rem 1.1rem;
+            cursor: pointer;
+            transition: background 0.12s ease, border-color 0.12s ease;
+            font-size: 0.97rem;
+            text-align: left;
+            font-family: inherit;
+            color: #1e2b3a;
+            line-height: 1.5;
+        }
+        .option:hover:not(.disabled) {
+            background: #e8f1fa;
+            border-color: #7aa5c4;
+        }
+        .option.correct-option {
+            background: #d9f0e0;
+            border-color: #2a8c4d;
+            font-weight: 600;
+            color: #1e6b3a;
+        }
+        .option.wrong-option {
+            background: #fbe0dd;
+            border-color: #c0392b;
+            color: #922b21;
+        }
+        .option.disabled {
+            cursor: default;
+            opacity: 0.85;
+        }
+        .feedback {
+            margin-top: 0.9rem;
+            padding: 0.9rem 1.2rem;
+            border-radius: 0.6rem;
+            font-size: 0.94rem;
+            display: none;
+            line-height: 1.6;
+        }
+        .feedback.show {
+            display: block;
+        }
+        .feedback.correct-fb {
+            background: #e2f3e8;
+            border-left: 4px solid #2a8c4d;
+            color: #1e4d2e;
+        }
+        .feedback.incorrect-fb {
+            background: #fbe0dd;
+            border-left: 4px solid #c0392b;
+            color: #7b241c;
+        }
+        .feedback strong {
+            font-weight: 700;
+        }
+        .final-score {
+            background: #1c4b7a;
+            color: white;
+            padding: 1.6rem 2rem;
+            border-radius: 1rem;
+            margin: 2rem 0;
+            text-align: center;
+            display: none;
+            box-shadow: 0 8px 20px rgba(28, 75, 122, 0.3);
+        }
+        .final-score.show {
+            display: block;
+        }
+        .final-score h3 {
+            background: transparent;
+            color: white;
+            font-size: 1.5rem;
+            margin: 0 0 0.6rem 0;
+            padding: 0;
+        }
+        .final-score .big {
+            font-size: 2.6rem;
+            font-weight: 700;
+            color: #ffd966;
+            display: block;
+            margin: 0.5rem 0;
+        }
+        .final-score p {
+            color: #d9eaff;
+            margin: 0.4rem 0;
+        }
+        .progress-bar-outer {
+            background: #b8d0e6;
+            border-radius: 20px;
+            height: 10px;
+            margin-top: 0.6rem;
+            overflow: hidden;
+        }
+        .progress-bar-inner {
+            background: #ffd966;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+<div class="paper">
+    <h1>Attention Is All You Need – From Tokens to Matrices</h1>
+    <p class="subtitle">A beginner‑friendly walkthrough: every concept introduced, every number computed by hand.</p>
+
+    <!-- =============================== -->
+    <!-- ========== INTRODUCTION ========== -->
+    <!-- =============================== -->
+    <div class="intro">
+        <h2>Introduction: What is the Transformer?</h2>
+
+        <p>Before we dive into the mathematics, let’s understand <em>what</em> the Transformer is and <em>why</em> it was a big deal.</p>
+
+        <div class="definition">
+            <strong>📘 Definition — Transformer:</strong> A neural network architecture introduced in the 2017 paper <em>“Attention Is All You Need”</em> by Vaswani et al. It processes sequences of tokens (words, sub‑words, or other units) using a mechanism called <strong>attention</strong>, without any recurrence or convolution. It is the foundation of nearly every modern large language model, including GPT, BERT, and their descendants.
+        </div>
+
+        <!-- === Interactive tools: two pop-up buttons === -->
+        <div class="tools-row">
+            <div class="tool-card">
+                <h4>🔍 See it in action</h4>
+                <p>The <strong>PoloClub Transformer Explainer</strong> is an interactive visualizer that shows a real Transformer processing text — attention heads, token embeddings, and all.</p>
+                <button class="try-button try-button-green" onclick="openExplainerPopup()">
+                    Open Transformer Explainer
+                </button>
+            </div>
+            <div class="tool-card">
+                <h4>🧩 Split text into tokens</h4>
+                <p>The <strong>OpenAI Tokenizer</strong> shows exactly how a sentence gets chopped into tokens and what IDs each token gets.</p>
+                <button class="try-button" onclick="openTokenizerPopup()">
+                    Open OpenAI Tokenizer
+                </button>
+            </div>
+        </div>
+
+        <h3>What problem did it solve?</h3>
+        <p>Before the Transformer, the dominant models for sequences were <strong>recurrent neural networks</strong> (RNNs), especially LSTMs and GRUs. They processed tokens one at a time, left to right, carrying a hidden state. This worked, but had two big problems:</p>
+
+        <div class="comparison">
+            <div>
+                <span class="tag tag-old">Before</span>
+                <h4>RNNs / LSTMs</h4>
+                <ul style="margin-left: 1.2rem;">
+                    <li>Process tokens <strong>sequentially</strong> — token <em>t</em> can’t be computed until token <em>t−1</em> is done</li>
+                    <li>Hard to parallelize on modern GPUs</li>
+                    <li>Struggle with <strong>long‑range dependencies</strong> — information from early tokens fades by the time you reach late tokens</li>
+                    <li>Training is slow because you can’t batch across time steps</li>
+                </ul>
+            </div>
+            <div>
+                <span class="tag tag-new">After</span>
+                <h4>Transformer</h4>
+                <ul style="margin-left: 1.2rem;">
+                    <li>Processes <strong>all tokens at once</strong> — every token attends to every other token in parallel</li>
+                    <li>Fully <strong>parallelizable</strong> on GPUs</li>
+                    <li>Handles <strong>long‑range dependencies</strong> directly — the path between any two tokens is length 1</li>
+                    <li>Trains much faster and scales to enormous models</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- ============================================= -->
+        <!-- ===== What were LSTMs and GRUs? ============= -->
+        <!-- ============================================= -->
+        <div class="rnn-box">
+            <h3 style="background: #fdf1dd; color: #7a5b00; margin-top: 0;">What were LSTMs and GRUs?</h3>
+            <p>The introduction above mentions LSTMs and GRUs as the "before" models. If you've never heard of them, here's a short, plain‑language tour.</p>
+
+            <h4>The base RNN</h4>
+            <p>A <strong>recurrent neural network (RNN)</strong> reads a sequence one token at a time. At each step \(t\) it combines the current input \(x_t\) with a <strong>hidden state</strong> \(h_{t-1}\) from the previous step:</p>
+            <div class="math-block">
+                \[
+                h_t = \tanh(W_x x_t + W_h h_{t-1} + b)
+                \]
+            </div>
+            <p>The hidden state is the network’s working memory — it’s supposed to summarize “everything seen so far.” The problem is that for long sequences, information from early tokens gets washed out by repeated multiplications. This is the <strong>vanishing gradient problem</strong>: gradients become tiny as they flow backward through many time steps, so the network can’t learn long‑range dependencies.</p>
+
+            <div class="definition">
+                <strong>📘 Definition — Vanishing gradient problem:</strong> When a neural network has many layers (or many time steps), gradients shrink as they are propagated backward. Early parameters receive almost no signal, so they barely update. This makes it hard to learn long‑range dependencies in RNNs.
+            </div>
+
+            <h4>LSTM — Long Short‑Term Memory</h4>
+            <p>Proposed by Hochreiter &amp; Schmidhuber in 1997. The idea: keep <strong>two</strong> states instead of one, and add <strong>gates</strong> that decide what to remember and what to forget.</p>
+
+            <p>The two states are:</p>
+            <ul style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+                <li>The <strong>cell state</strong> \(C_t\) — the long‑term memory, like a conveyor belt</li>
+                <li>The <strong>hidden state</strong> \(h_t\) — the short‑term working memory</li>
+            </ul>
+
+            <p>The gates are small neural networks whose output is squashed to \([0,1]\) by a <strong>sigmoid</strong> \(\sigma\). A value of 0 means “block everything,” a value of 1 means “let everything through.”</p>
+
+            <p>There are three gates:</p>
+            <ol style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+                <li><strong>Forget gate</strong> \(f_t\) — what to throw away from the cell state</li>
+                <li><strong>Input gate</strong> \(i_t\) — what new information to store</li>
+                <li><strong>Output gate</strong> \(o_t\) — what part of the cell state to expose as the hidden state</li>
+            </ol>
+
+            <p>The equations:</p>
+            <div class="math-block">
+                \[
+                f_t = \sigma(W_f [h_{t-1}, x_t] + b_f)
+                \]
+                \[
+                i_t = \sigma(W_i [h_{t-1}, x_t] + b_i), \qquad \tilde{C}_t = \tanh(W_C [h_{t-1}, x_t] + b_C)
+                \]
+                \[
+                C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t
+                \]
+                \[
+                o_t = \sigma(W_o [h_{t-1}, x_t] + b_o), \qquad h_t = o_t \odot \tanh(C_t)
+                \]
+            </div>
+            <p>Here \(\odot\) is element‑wise multiplication, and \([h_{t-1}, x_t]\) means concatenating the previous hidden state with the current input.</p>
+
+            <div class="note">
+                💡 <strong>Why this helps:</strong> The cell state update \(C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t\) is a <em>sum</em>, not a product. Gradients can flow back through this sum without shrinking, which is why LSTMs can learn dependencies hundreds of steps apart. The gates let the network learn <em>when</em> to write, read, or erase memory.
+            </div>
+
+            <h4>GRU — Gated Recurrent Unit</h4>
+            <p>Proposed by Cho et al. in 2014. The GRU is a <strong>simpler</strong> version of the LSTM. It merges the cell state and hidden state into one, and uses only two gates.</p>
+
+            <p>The two gates are:</p>
+            <ol style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+                <li><strong>Reset gate</strong> \(r_t\) — how much of the previous hidden state to forget</li>
+                <li><strong>Update gate</strong> \(z_t\) — how much of the new candidate to use vs. the old hidden state</li>
+            </ol>
+
+            <p>The equations:</p>
+            <div class="math-block">
+                \[
+                r_t = \sigma(W_r [h_{t-1}, x_t] + b_r)
+                \]
+                \[
+                z_t = \sigma(W_z [h_{t-1}, x_t] + b_z)
+                \]
+                \[
+                \tilde{h}_t = \tanh(W [r_t \odot h_{t-1}, x_t] + b)
+                \]
+                \[
+                h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t
+                \]
+            </div>
+
+            <h4>LSTM vs. GRU</h4>
+            <table>
+                <tr><th></th><th>LSTM</th><th>GRU</th></tr>
+                <tr><td>Gates</td><td>3 (forget, input, output)</td><td>2 (reset, update)</td></tr>
+                <tr><td>State</td><td>Cell state + hidden state</td><td>Just hidden state</td></tr>
+                <tr><td>Parameters</td><td>More</td><td>About 25% fewer</td></tr>
+                <tr><td>Training speed</td><td>Slower</td><td>Faster</td></tr>
+                <tr><td>Performance</td><td>Slightly better on some tasks</td><td>Comparable on most tasks</td></tr>
+                <tr><td>Year</td><td>1997</td><td>2014</td></tr>
+            </table>
+            <p>In practice, the difference is often small. GRUs are cheaper and faster; LSTMs have a bit more capacity.</p>
+
+            <h4>Why the Transformer replaced them</h4>
+            <p>Even with gates, LSTMs and GRUs have two fundamental limitations:</p>
+            <ol style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+                <li><strong>Sequential processing.</strong> Token \(t\) cannot be computed until token \(t-1\) is done. This makes them slow to train on modern GPUs, which are designed for parallel work.</li>
+                <li><strong>Long‑range dependencies still fade.</strong> Gates help, but information still travels through many steps. A 100‑token sentence means 100 sequential operations before the last token sees the first.</li>
+            </ol>
+            <p>The Transformer solved both:</p>
+            <ul style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+                <li><strong>All tokens are processed in parallel</strong> — attention computes all pairwise interactions at once.</li>
+                <li><strong>Any token can directly attend to any other token</strong> — the path between them is length 1, no matter how far apart they are in the sequence.</li>
+            </ul>
+            <p>That’s the core reason the 2017 paper is titled <em>“Attention Is All You Need”</em> — it argues that you don’t need recurrence at all.</p>
+        </div>
+
+        <h3>The key idea: attention</h3>
+        <p>The central operation is <span class="keyterm">attention</span>. Instead of carrying information forward through a hidden state, each token <em>looks at every other token</em> and decides how much to pay attention to each one. The result is a new representation of the token that blends in information from whichever tokens are most relevant.</p>
+
+        <p>For example, in the sentence <strong>“AI really rocks.”</strong>:</p>
+        <ul style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+            <li>The token <strong>“AI”</strong> might pay most attention to <strong>“rocks”</strong> — because together they form the core meaning.</li>
+            <li>The token <strong>“.”</strong> might also look at <strong>“rocks”</strong> — the verb tells it what kind of sentence this is.</li>
+            <li>The token <strong>“really”</strong> might spread its attention more evenly — it modifies the verb but doesn’t carry as much meaning on its own.</li>
+        </ul>
+        <p>These attention weights are <strong>learned from data</strong>, not hand‑coded. The mathematics we’ll build in this walkthrough computes exactly these weights.</p>
+
+        <h3>The architecture in one paragraph</h3>
+        <p>The Transformer is a stack of identical <strong>blocks</strong>. Each block has two sub‑layers:</p>
+        <ol style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+            <li><strong>Multi‑head attention</strong> — every token gathers information from every other token.</li>
+            <li><strong>Feed‑forward network</strong> — each token independently transforms its representation through a small neural network.</li>
+        </ol>
+        <p>Around each sub‑layer there’s a <strong>residual connection</strong> (add the input back) and <strong>layer normalization</strong> (rescale the vector). Stack this block 6, 12, 96, or 100+ times, and you get a Transformer.</p>
+
+        <h3>Encoder and decoder</h3>
+        <p>The original paper uses two stacks:</p>
+        <ul style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+            <li>An <strong>encoder</strong> that reads the input sentence and produces a representation for each token.</li>
+            <li>A <strong>decoder</strong> that generates the output sentence one token at a time, attending both to what it has already produced and to the encoder’s output.</li>
+        </ul>
+        <p>This encoder‑decoder setup was designed for machine translation. Later models (like GPT) use only the decoder; others (like BERT) use only the encoder. The core mathematics is the same.</p>
+
+        <h3>What we’ll build in this walkthrough</h3>
+        <p>We’ll start from the raw sentence <strong>“AI really rocks.”</strong> and walk forward through every matrix operation:</p>
+        <ol style="margin-left: 1.8rem; margin-bottom: 0.9rem;">
+            <li>Tokenize the sentence and map tokens to IDs.</li>
+            <li>Look up embedding vectors for each ID.</li>
+            <li>Stack them into a matrix \(X\).</li>
+            <li>Project \(X\) into queries \(Q\), keys \(K\), and values \(V\).</li>
+            <li>Compute scaled dot‑product attention.</li>
+            <li>Project the attention output with \(W^O\).</li>
+            <li>Add the residual and run the feed‑forward network.</li>
+            <li>Add another residual — this is one full block.</li>
+        </ol>
+        <p>At the end, in an appendix, we’ll see how all the weight matrices are actually <em>learned</em> using gradients.</p>
+
+        <div class="note">
+            💡 <strong>No equations yet.</strong> The introduction is deliberately equation‑free. If you understand that attention lets tokens <em>look at each other</em>, and the feed‑forward network lets each token <em>transform itself</em>, you already understand the big picture.
+        </div>
+    </div>
+
+    <!-- =============================== -->
+    <div class="toc">
+        <strong>📖 What we will cover</strong>
+        <ul>
+            <li>What a token, vocabulary, and token ID are</li>
+            <li>What an embedding and embedding dimension are</li>
+            <li>How tokens become a matrix \(X\)</li>
+            <li>What weight matrices \(W^Q, W^K, W^V\) are and how \(Q, K, V\) are formed</li>
+            <li>What queries, keys, and values mean</li>
+            <li>How scaled dot‑product attention works (dot products, scaling, softmax, weighted sum)</li>
+            <li>How the attention output is <strong>projected back to \(d_{\text{model}}\)</strong> with \(W^O\)</li>
+            <li>What the <strong>feed‑forward network</strong> does (with a full numeric walkthrough)</li>
+            <li>What multi‑head attention is</li>
+            <li>What positional encoding is</li>
+            <li><strong>Appendix A:</strong> How the matrices are actually learned using gradients</li>
+            <li><strong>Appendix B:</strong> 50‑question quiz to test your understanding</li>
+        </ul>
+    </div>
+
+    <!-- =============================== -->
+    <h2>1. Tokens, vocabulary, and token IDs</h2>
+    <p>Computers cannot read words directly. So we break text into small pieces called <span class="keyterm">tokens</span>. A token is usually a word or a sub‑word.</p>
+    <p>Imagine we have a tiny sentence:</p>
+    <div class="handwritten" style="text-align: center; font-size: 1.2rem;">
+        <strong>“AI really rocks.”</strong>
+    </div>
+    <p>Tokenization splits it into smaller pieces. A real tokenizer (like GPT’s) would produce four tokens here — the period becomes its own token:</p>
+
+    <div class="definition">
+        <strong>📘 Definition — Vocabulary:</strong> The set of all distinct tokens the model knows. Each token in the vocabulary is assigned a unique integer called a <strong>token ID</strong>.
+    </div>
+
+    <p>In most modern tokenizers (WordPiece, BPE, SentencePiece), IDs start at <strong>0</strong>. We follow that convention:</p>
+    <table>
+        <tr><th>Token</th><th>Token ID</th></tr>
+        <tr><td>AI</td><td>0</td></tr>
+        <tr><td>really</td><td>1</td></tr>
+        <tr><td>rocks</td><td>2</td></tr>
+        <tr><td>.</td><td>3</td></tr>
+    </table>
+
+    <div class="note">
+        📝 <strong>Note:</strong> Some tokenizers reserve ID 0 for padding, or start at 1. The important thing is that IDs are <strong>contiguous non‑negative integers</strong>, so they can be used as row indices into the embedding matrix.
+    </div>
+
+    <!-- === OpenAI Tokenizer pop-up button (repeated in context) === -->
+    <div style="text-align: center; margin: 1.4rem 0;">
+        <button class="try-button" onclick="openTokenizerPopup()">
+            🔗 Try the OpenAI Online Tokenizer
+        </button>
+        <p style="font-size: 0.9rem; color: #4f6f8c; margin-top: 0.5rem;">
+            Opens a pop‑up window. Paste <em>“AI really rocks.”</em> and see how it is split into tokens and IDs.
+        </p>
+    </div>
+
+    <!-- =============================== -->
+    <h2>2. Embeddings and embedding dimension</h2>
+    <p>A token ID like <code>0</code> is just a label. The model needs a rich numerical representation of the token’s meaning. So we map each ID to a vector of real numbers.</p>
+
+    <div class="definition">
+        <strong>📘 Definition — Embedding:</strong> A dense vector of real numbers that represents a token. Similar tokens tend to have similar vectors.
+    </div>
+    <div class="definition">
+        <strong>📘 Definition — Embedding dimension (\(d_{\text{model}}\)):</strong> The <strong>length of the vector</strong> used to represent each token. It is the number of columns in the embedding matrix.
+    </div>
+
+    <p>For our example, let’s choose <strong>\(d_{\text{model}} = 4\)</strong>. That means every token becomes a list of 4 numbers.</p>
+
+    <h3>2.1 The embedding matrix \(E\)</h3>
+    <p>The embedding matrix \(E\) has one row per vocabulary entry and one column per embedding dimension. Its shape is:</p>
+    <div class="math-block">
+        \[
+        E \in \mathbb{R}^{|V| \times d_{\text{model}}}
+        \]
+        <p>where \(|V|\) is the vocabulary size (here 4) and \(d_{\text{model}} = 4\).</p>
+    </div>
+
+    <div class="matrix-display">
+        <div>
+            \[
+            E = \begin{bmatrix}
+            \color{blue}{1} & \color{blue}{0} & \color{blue}{2} & \color{blue}{1} \\
+            \color{red}{0} & \color{red}{2} & \color{red}{1} & \color{red}{0} \\
+            \color{green}{1} & \color{green}{1} & \color{green}{0} & \color{green}{2} \\
+            \color{purple}{2} & \color{purple}{0} & \color{purple}{1} & \color{purple}{1}
+            \end{bmatrix}
+            \]
+            <div class="caption">Embedding matrix \(E\) (4 rows × 4 columns)</div>
+        </div>
+    </div>
+
+    <p>Row 0 (blue) is the embedding for ID 0 → <strong>AI</strong>:</p>
+    <div class="math-block">
+        \[
+        \mathbf{x}_{\text{AI}} = [1,\; 0,\; 2,\; 1]
+        \]
+    </div>
+    <p>Row 1 (red) is the embedding for ID 1 → <strong>really</strong>:</p>
+    <div class="math-block">
+        \[
+        \mathbf{x}_{\text{really}} = [0,\; 2,\; 1,\; 0]
+        \]
+    </div>
+    <p>Row 2 (green) is the embedding for ID 2 → <strong>rocks</strong>:</p>
+    <div class="math-block">
+        \[
+        \mathbf{x}_{\text{rocks}} = [1,\; 1,\; 0,\; 2]
+        \]
+    </div>
+    <p>Row 3 (purple) is the embedding for ID 3 → <strong>.</strong> (period):</p>
+    <div class="math-block">
+        \[
+        \mathbf{x}_{.} = [2,\; 0,\; 1,\; 1]
+        \]
+    </div>
+    <div class="note">
+        💡 <strong>In practice:</strong> The values inside \(E\) are <em>learned</em> during training (see Appendix A). For this walkthrough, we just pretend they are already given.
+    </div>
+
+    <!-- =============================== -->
+    <h2>3. Stacking token vectors into a matrix \(X\)</h2>
+    <p>We stack the four token vectors as rows to form the input matrix \(X\) (shape \(4 \times 4\)):</p>
+    <div class="math-block">
+        \[
+        X = \begin{bmatrix}
+        1 & 0 & 2 & 1 \\
+        0 & 2 & 1 & 0 \\
+        1 & 1 & 0 & 2 \\
+        2 & 0 & 1 & 1
+        \end{bmatrix}
+        \quad
+        \begin{array}{l}
+        \leftarrow \text{AI (ID 0)} \\
+        \leftarrow \text{really (ID 1)} \\
+        \leftarrow \text{rocks (ID 2)} \\
+        \leftarrow \text{. (ID 3)}
+        \end{array}
+        \]
+    </div>
+    <p>This matrix \(X\) is the input to the first attention block. Note that <strong>each row of \(X\) is one token’s embedding vector</strong> — this idea of “one token per row” is used throughout the whole Transformer.</p>
+
+    <!-- =============================== -->
+    <h2>4. Creating Q, K, V: the heart of attention</h2>
+    <p>Attention does not use \(X\) directly. Instead, it creates <strong>three new matrices</strong> from \(X\):</p>
+    <ul style="margin-left: 1.8rem; margin-bottom: 1rem;">
+        <li><strong>Q</strong> — the matrix of <em>queries</em></li>
+        <li><strong>K</strong> — the matrix of <em>keys</em></li>
+        <li><strong>V</strong> — the matrix of <em>values</em></li>
+    </ul>
+
+    <div class="note">
+        ⚠️ <strong>Careful with vocabulary:</strong> People often say “the query of token <em>i</em>” — that means <strong>row <em>i</em> of Q</strong>, which is a single vector. When we say “the query matrix Q”, we mean the whole matrix of stacked query vectors. Both usages are standard, but they refer to different objects: <strong>Q, K, V themselves are matrices; their rows are vectors.</strong>
+    </div>
+
+    <div class="definition">
+        <strong>📘 Definition — Query matrix (Q):</strong> A matrix whose rows are query vectors. Row \(i\) is the query vector for token \(i\). It represents <em>what token \(i\) is looking for</em>. Each query vector is compared against every key vector to decide where to pay attention.
+    </div>
+    <div class="definition">
+        <strong>📘 Definition — Key matrix (K):</strong> A matrix whose rows are key vectors. Row \(i\) is the key vector for token \(i\). It represents <em>what token \(i\) offers</em>. Each key vector is compared against every query vector to compute a similarity score.
+    </div>
+    <div class="definition">
+        <strong>📘 Definition — Value matrix (V):</strong> A matrix whose rows are value vectors. Row \(i\) is the value vector for token \(i\). It represents <em>the actual content</em> of token \(i\). Once attention weights are computed, we take a weighted sum of the value vectors.
+    </div>
+
+    <p>To create Q, K, V, we multiply \(X\) by three <strong>learned weight matrices</strong>:</p>
+    <div class="math-block">
+        \[
+        Q = X W^Q, \qquad K = X W^K, \qquad V = X W^V
+        \]
+    </div>
+
+    <div class="definition">
+        <strong>📘 Definition — Weight matrix:</strong> A matrix of numbers learned during training (see Appendix A). Multiplying \(X\) by \(W^Q\) projects the token vectors into a new space that is useful for computing queries.
+    </div>
+
+    <h3>4.1 Choose the weight matrices</h3>
+    <p>For simplicity, let each weight matrix have shape \(4 \times 3\). That means the resulting Q, K, V will each have shape \(4 \times 3\) (i.e., \(d_k = d_v = 3\)).</p>
+
+    <div class="matrix-display">
+        <div>
+            \[
+            W^Q = \begin{bmatrix}
+            1 & 0 & 1 \\
+            0 & 1 & 0 \\
+            1 & 0 & 0 \\
+            0 & 1 & 1
+            \end{bmatrix}
+            \]
+            <div class="caption">\(W^Q\) (4×3) — query weights</div>
+        </div>
+        <div>
+            \[
+            W^K = \begin{bmatrix}
+            0 & 1 & 0 \\
+            1 & 0 & 1 \\
+            0 & 1 & 0 \\
+            1 & 0 & 1
+            \end{bmatrix}
+            \]
+            <div class="caption">\(W^K\) (4×3) — key weights</div>
+        </div>
+        <div>
+            \[
+            W^V = \begin{bmatrix}
+            1 & 1 & 0 \\
+            0 & 1 & 1 \\
+            1 & 0 & 1 \\
+            1 & 1 & 1
+            \end{bmatrix}
+            \]
+            <div class="caption">\(W^V\) (4×3) — value weights</div>
+        </div>
+    </div>
+
+    <h3>4.2 Compute \(Q = X W^Q\)</h3>
+    <p>Multiplying the \(4 \times 4\) input matrix \(X\) by the \(4 \times 3\) weight matrix \(W^Q\) gives a \(4 \times 3\) matrix \(Q\). For each row \(i\):</p>
+    <div class="math-block">
+        \[
+        Q_{i,1} = X_{i,1} + X_{i,3}, \quad
+        Q_{i,2} = X_{i,2} + X_{i,4}, \quad
+        Q_{i,3} = X_{i,1} + X_{i,4}
+        \]
+    </div>
+    <p>Applying this to each row of \(X\):</p>
+    <div class="math-block">
+        \[
+        Q = \begin{bmatrix}
+        1+2 & 0+1 & 1+1 \\
+        0+1 & 2+0 & 0+0 \\
+        1+0 & 1+2 & 1+2 \\
+        2+1 & 0+1 & 2+1
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        3 & 1 & 2 \\
+        1 & 2 & 0 \\
+        1 & 3 & 3 \\
+        3 & 1 & 3
+        \end{bmatrix}
+        \]
+    </div>
+    <p>So:</p>
+    <div class="math-block">
+        \[
+        Q = \begin{bmatrix}
+        3 & 1 & 2 \\
+        1 & 2 & 0 \\
+        1 & 3 & 3 \\
+        3 & 1 & 3
+        \end{bmatrix}
+        \quad
+        \begin{array}{l}
+        \leftarrow \text{query vector for “AI”} \\
+        \leftarrow \text{query vector for “really”} \\
+        \leftarrow \text{query vector for “rocks”} \\
+        \leftarrow \text{query vector for “.”}
+        \end{array}
+        \]
+    </div>
+    <p>Each <strong>row</strong> of \(Q\) is a single query vector (length 3). The whole matrix \(Q\) is 4 × 3.</p>
+
+    <h3>4.3 Compute \(K = X W^K\)</h3>
+    <div class="math-block">
+        \[
+        K_{i,1} = X_{i,2} + X_{i,4}, \quad
+        K_{i,2} = X_{i,1} + X_{i,3}, \quad
+        K_{i,3} = X_{i,2} + X_{i,4}
+        \]
+    </div>
+    <p>Applying to each row of \(X\):</p>
+    <div class="math-block">
+        \[
+        K = \begin{bmatrix}
+        0+1 & 1+2 & 0+1 \\
+        2+0 & 0+1 & 2+0 \\
+        1+2 & 1+0 & 1+2 \\
+        0+1 & 2+1 & 0+1
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        1 & 3 & 1 \\
+        2 & 1 & 2 \\
+        3 & 1 & 3 \\
+        1 & 3 & 1
+        \end{bmatrix}
+        \]
+    </div>
+    <p>So:</p>
+    <div class="math-block">
+        \[
+        K = \begin{bmatrix}
+        1 & 3 & 1 \\
+        2 & 1 & 2 \\
+        3 & 1 & 3 \\
+        1 & 3 & 1
+        \end{bmatrix}
+        \quad
+        \begin{array}{l}
+        \leftarrow \text{key vector for “AI”} \\
+        \leftarrow \text{key vector for “really”} \\
+        \leftarrow \text{key vector for “rocks”} \\
+        \leftarrow \text{key vector for “.”}
+        \end{array}
+        \]
+    </div>
+
+    <h3>4.4 Compute \(V = X W^V\)</h3>
+    <div class="math-block">
+        \[
+        V_{i,1} = X_{i,1} + X_{i,3} + X_{i,4}, \quad
+        V_{i,2} = X_{i,1} + X_{i,2} + X_{i,4}, \quad
+        V_{i,3} = X_{i,2} + X_{i,3} + X_{i,4}
+        \]
+    </div>
+    <p>Applying to each row of \(X\):</p>
+    <div class="math-block">
+        \[
+        V = \begin{bmatrix}
+        1+2+1 & 1+0+1 & 0+2+1 \\
+        0+1+0 & 0+2+0 & 2+1+0 \\
+        1+0+2 & 1+1+2 & 1+0+2 \\
+        2+1+1 & 2+0+1 & 0+1+1
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        4 & 2 & 3 \\
+        1 & 2 & 3 \\
+        3 & 4 & 3 \\
+        4 & 3 & 2
+        \end{bmatrix}
+        \]
+    </div>
+    <p>So:</p>
+    <div class="math-block">
+        \[
+        V = \begin{bmatrix}
+        4 & 2 & 3 \\
+        1 & 2 & 3 \\
+        3 & 4 & 3 \\
+        4 & 3 & 2
+        \end{bmatrix}
+        \quad
+        \begin{array}{l}
+        \leftarrow \text{value vector for “AI”} \\
+        \leftarrow \text{value vector for “really”} \\
+        \leftarrow \text{value vector for “rocks”} \\
+        \leftarrow \text{value vector for “.”}
+        \end{array}
+        \]
+    </div>
+
+    <!-- =============================== -->
+    <h2>5. Scaled dot‑product attention</h2>
+    <p>Now we use Q, K, V to compute the attention output. The formula from the paper is:</p>
+    <div class="math-block">
+        \[
+        \text{Attention}(Q, K, V) = \text{softmax}\!\left(\frac{Q K^\top}{\sqrt{d_k}}\right) V
+        \]
+    </div>
+
+    <p>Let’s break this into four steps. Throughout, remember: <strong>each row of Q, K, and V is a vector belonging to one token</strong>.</p>
+
+    <h3>5.1 Step 1: Compute \(Q K^\top\) (similarity scores)</h3>
+    <p>\(Q\) is \(4 \times 3\) and \(K^\top\) is \(3 \times 4\), so \(QK^\top\) is \(4 \times 4\). Each entry \((i, j)\) is the dot product of <strong>the query vector of token \(i\)</strong> and <strong>the key vector of token \(j\)</strong>.</p>
+    <p>For example, entry (1,1) (query vector of “AI” vs key vector of “AI”):</p>
+    <div class="math-block">
+        \[
+        (QK^\top)_{1,1} = 3\cdot1 + 1\cdot3 + 2\cdot1 = 3 + 3 + 2 = 8
+        \]
+    </div>
+    <p>Entry (1,3) (query vector of “AI” vs key vector of “rocks”):</p>
+    <div class="math-block">
+        \[
+        (QK^\top)_{1,3} = 3\cdot3 + 1\cdot1 + 2\cdot3 = 9 + 1 + 6 = 16
+        \]
+    </div>
+    <p>Repeating for all pairs gives the full \(4 \times 4\) matrix:</p>
+    <div class="math-block">
+        \[
+        Q K^\top =
+        \begin{bmatrix}
+        8 & 11 & 16 & 8 \\
+        7 & 4 & 7 & 7 \\
+        13 & 8 & 15 & 13 \\
+        9 & 16 & 19 & 9
+        \end{bmatrix}
+        \]
+    </div>
+    <div class="definition">
+        <strong>📘 Definition — Dot product:</strong> The sum of element‑wise products of two vectors. It measures how similar they are. Larger → more similar. Here, \(Q K^\top\) is a matrix of dot products: each entry (i, j) is the dot product of query vector i and key vector j.
+    </div>
+    <p><strong>Interpretation:</strong> Query “.” (row 4) has a high similarity (19) with key “rocks” — the model will likely pay a lot of attention from the period to the verb. Meanwhile, query “really” (row 2) has a relatively low similarity (4) with key “really” itself, but similar scores to its neighbors.</p>
+
+    <h3>5.2 Step 2: Scale by \(\sqrt{d_k}\)</h3>
+    <p>Here \(d_k = 3\), so \(\sqrt{3} \approx 1.732\). Divide all entries:</p>
+    <div class="math-block">
+        \[
+        \frac{Q K^\top}{\sqrt{3}} \approx 
+        \begin{bmatrix}
+        4.619 & 6.351 & 9.238 & 4.619 \\
+        4.041 & 2.309 & 4.041 & 4.041 \\
+        7.506 & 4.619 & 8.660 & 7.506 \\
+        5.196 & 9.238 & 10.970 & 5.196
+        \end{bmatrix}
+        \]
+    </div>
+    <div class="definition">
+        <strong>📘 Why scale?</strong> Dot products grow with \(d_k\). Large values push softmax into regions with extremely small gradients, which makes training slow. Dividing by \(\sqrt{d_k}\) keeps the values at a reasonable scale.
+    </div>
+
+    <h3>5.3 Step 3: Apply softmax row‑wise</h3>
+    <div class="definition">
+        <strong>📘 Definition — Softmax:</strong> A function that turns a vector of real numbers into a probability distribution. For a vector \(x\): \(\text{softmax}(x_i) = \dfrac{e^{x_i}}{\sum_j e^{x_j}}\). Every output is between 0 and 1, and the outputs sum to 1.
+    </div>
+
+    <p>Let’s compute softmax for <strong>row 1</strong> (query “AI”): values \([4.619, 6.351, 9.238, 4.619]\).</p>
+    <div class="math-block">
+        \[
+        e^{4.619} \approx 101.4, \quad e^{6.351} \approx 573.5, \quad e^{9.238} \approx 10280, \quad e^{4.619} \approx 101.4
+        \]
+        \[
+        \text{sum} \approx 11056.3
+        \]
+        \[
+        \text{softmax} \approx [0.0092,\; 0.0519,\; 0.9298,\; 0.0092]
+        \]
+    </div>
+    <p>So when processing “AI”, the model attends <strong>~93% to the word “rocks”</strong>, which makes intuitive sense — “AI rocks” is the core meaning.</p>
+
+    <p><strong>Row 2</strong> (query “really”): values \([4.041, 2.309, 4.041, 4.041]\):</p>
+    <div class="math-block">
+        \[
+        e^{4.041} \approx 56.9, \quad e^{2.309} \approx 10.1, \quad e^{4.041} \approx 56.9, \quad e^{4.041} \approx 56.9
+        \]
+        \[
+        \text{sum} \approx 180.8
+        \]
+        \[
+        \text{softmax} \approx [0.3148,\; 0.0559,\; 0.3148,\; 0.3148]
+        \]
+    </div>
+
+    <p><strong>Row 3</strong> (query “rocks”): values \([7.506, 4.619, 8.660, 7.506]\):</p>
+    <div class="math-block">
+        \[
+        e^{7.506} \approx 1815, \quad e^{4.619} \approx 101.4, \quad e^{8.660} \approx 5780, \quad e^{7.506} \approx 1815
+        \]
+        \[
+        \text{sum} \approx 9511.4
+        \]
+        \[
+        \text{softmax} \approx [0.1908,\; 0.0107,\; 0.6077,\; 0.1908]
+        \]
+    </div>
+
+    <p><strong>Row 4</strong> (query “.”): values \([5.196, 9.238, 10.970, 5.196]\):</p>
+    <div class="math-block">
+        \[
+        e^{5.196} \approx 180.5, \quad e^{9.238} \approx 10280, \quad e^{10.970} \approx 58000, \quad e^{5.196} \approx 180.5
+        \]
+        \[
+        \text{sum} \approx 68641
+        \]
+        \[
+        \text{softmax} \approx [0.0026,\; 0.1498,\; 0.8450,\; 0.0026]
+        \]
+    </div>
+
+    <p>So the attention weight matrix \(A\) is:</p>
+    <div class="math-block">
+        \[
+        A \approx \begin{bmatrix}
+        0.0092 & 0.0519 & 0.9298 & 0.0092 \\
+        0.3148 & 0.0559 & 0.3148 & 0.3148 \\
+        0.1908 & 0.0107 & 0.6077 & 0.1908 \\
+        0.0026 & 0.1498 & 0.8450 & 0.0026
+        \end{bmatrix}
+        \]
+    </div>
+    <p>Each row sums to 1.0, as required. Notice how different tokens focus on different parts of the sentence.</p>
+
+    <h3>5.4 Step 4: Multiply by V</h3>
+    <p>The raw attention output is \(A V\), a \(4 \times 3\) matrix. For example, for row 1 (the token “AI”):</p>
+    <div class="math-block">
+        \[
+        \text{Raw}_1 = 0.0092 \cdot [4,2,3] + 0.0519 \cdot [1,2,3] + 0.9298 \cdot [3,4,3] + 0.0092 \cdot [4,3,2]
+        \]
+        \[
+        \approx [2.915,\; 3.869,\; 2.991]
+        \]
+    </div>
+    <p>Repeating for all rows gives the full raw output matrix:</p>
+    <div class="math-block">
+        \[
+        \text{Raw} = A V \approx
+        \begin{bmatrix}
+        2.915 & 3.869 & 2.991 \\
+        2.888 & 3.053 & 3.000 \\
+        2.907 & 3.668 & 3.001 \\
+        2.747 & 3.798 & 3.142
+        \end{bmatrix}
+        \]
+    </div>
+    <p>But there is a problem: this matrix is \(4 \times 3\), while \(X\) is \(4 \times 4\). We can’t add them yet for the residual connection. That is what \(W^O\) is for.</p>
+
+    <!-- =============================== -->
+    <h2>6. Projecting the attention output with \(W^O\)</h2>
+
+    <p>In a real Transformer, the attention sub‑layer ends with a learned <strong>output projection</strong> matrix \(W^O\). Its job is to take the attention result and map it back to the embedding dimension \(d_{\text{model}}\) so the residual add \(X + \text{attention output}\) makes sense.</p>
+
+    <div class="definition">
+        <strong>📘 Definition — Output projection \(W^O\):</strong> A learned matrix applied to the (concatenated) attention output. It mixes the values produced by the attention heads and projects them back to dimension \(d_{\text{model}}\).
+        <br><br>
+        In multi‑head attention with \(h\) heads of size \(d_v = d_{\text{model}}/h\), the concatenation has dimension \(h \cdot d_v = d_{\text{model}}\), so \(W^O\) is <strong>square</strong> (\(d_{\text{model}} \times d_{\text{model}}\)). In our simplified single‑head example, \(d_v = 3 \neq d_{\text{model}} = 4\), so \(W^O\) has shape \(3 \times 4\) to restore the right dimension.
+    </div>
+
+    <h3>6.1 Choose \(W^O\)</h3>
+    <p>For our single‑head example, let’s pick a \(3 \times 4\) matrix:</p>
+    <div class="matrix-display">
+        <div>
+            \[
+            W^O = \begin{bmatrix}
+            1 & 0 & 1 & 0 \\
+            0 & 1 & 0 & 1 \\
+            1 & 1 & 1 & 1
+            \end{bmatrix}
+            \]
+            <div class="caption">\(W^O\) (3 × 4) — output projection</div>
+        </div>
+    </div>
+
+    <h3>6.2 Compute \(\text{Proj} = (AV)\, W^O\)</h3>
+    <p>Multiplying the \(4 \times 3\) raw attention output by the \(3 \times 4\) matrix \(W^O\) gives a \(4 \times 4\) projected output. For each row \(i\):</p>
+    <div class="math-block">
+        \[
+        \text{Proj}_{i,1} = \text{Raw}_{i,1} + \text{Raw}_{i,3}
+        \]
+        \[
+        \text{Proj}_{i,2} = \text{Raw}_{i,2} + \text{Raw}_{i,3}
+        \]
+        \[
+        \text{Proj}_{i,3} = \text{Raw}_{i,1} + \text{Raw}_{i,3}
+        \]
+        \[
+        \text{Proj}_{i,4} = \text{Raw}_{i,2} + \text{Raw}_{i,3}
+        \]
+    </div>
+    <p>Row 1 (Raw\(_1 = [2.915, 3.869, 2.991]\)):</p>
+    <div class="math-block">
+        \[
+        \text{Proj}_1 = [2.915 + 2.991,\; 3.869 + 2.991,\; 2.915 + 2.991,\; 3.869 + 2.991]
+        = [5.906,\; 6.860,\; 5.906,\; 6.860]
+        \]
+    </div>
+    <p>Row 2 (Raw\(_2 = [2.888, 3.053, 3.000]\)):</p>
+    <div class="math-block">
+        \[
+        \text{Proj}_2 = [2.888 + 3.000,\; 3.053 + 3.000,\; 2.888 + 3.000,\; 3.053 + 3.000]
+        = [5.888,\; 6.053,\; 5.888,\; 6.053]
+        \]
+    </div>
+    <p>Row 3 (Raw\(_3 = [2.907, 3.668, 3.001]\)):</p>
+    <div class="math-block">
+        \[
+        \text{Proj}_3 = [2.907 + 3.001,\; 3.668 + 3.001,\; 2.907 + 3.001,\; 3.668 + 3.001]
+        = [5.908,\; 6.669,\; 5.908,\; 6.669]
+        \]
+    </div>
+    <p>Row 4 (Raw\(_4 = [2.747, 3.798, 3.142]\)):</p>
+    <div class="math-block">
+        \[
+        \text{Proj}_4 = [2.747 + 3.142,\; 3.798 + 3.142,\; 2.747 + 3.142,\; 3.798 + 3.142]
+        = [5.889,\; 6.940,\; 5.889,\; 6.940]
+        \]
+    </div>
+    <p>So the projected attention output is:</p>
+    <div class="math-block">
+        \[
+        \text{Proj} = (AV) W^O \approx
+        \begin{bmatrix}
+        5.906 & 6.860 & 5.906 & 6.860 \\
+        5.888 & 6.053 & 5.888 & 6.053 \\
+        5.908 & 6.669 & 5.908 & 6.669 \\
+        5.889 & 6.940 & 5.889 & 6.940
+        \end{bmatrix}
+        \]
+    </div>
+    <p>Now the shape is \(4 \times 4\), matching \(X\). We can safely add them in the residual connection.</p>
+
+    <!-- =============================== -->
+    <h2>7. The feed‑forward network (FFN)</h2>
+
+    <h3>7.1 Step 1: Residual connection (add the projected attention output back to X)</h3>
+    <p>Before the FFN, the paper adds the original input \(X\) back to the projected attention output:</p>
+    <div class="math-block">
+        \[
+        Z = X + \text{Proj} = 
+        \begin{bmatrix}
+        1 & 0 & 2 & 1 \\
+        0 & 2 & 1 & 0 \\
+        1 & 1 & 0 & 2 \\
+        2 & 0 & 1 & 1
+        \end{bmatrix}
+        +
+        \begin{bmatrix}
+        5.906 & 6.860 & 5.906 & 6.860 \\
+        5.888 & 6.053 & 5.888 & 6.053 \\
+        5.908 & 6.669 & 5.908 & 6.669 \\
+        5.889 & 6.940 & 5.889 & 6.940
+        \end{bmatrix}
+        \]
+        \[
+        Z = 
+        \begin{bmatrix}
+        6.906 & 6.860 & 7.906 & 7.860 \\
+        5.888 & 8.053 & 6.888 & 6.053 \\
+        6.908 & 7.669 & 5.908 & 8.669 \\
+        7.889 & 6.940 & 6.889 & 7.940
+        \end{bmatrix}
+        \]
+    </div>
+    <div class="note">
+        💡 <strong>Why residual connections?</strong> They let gradients flow directly from the output back to the input during training, making deep networks trainable. They also let the model “skip” layers when needed.
+    </div>
+
+    <h3>7.2 Step 2: First FFN layer (expand the dimension)</h3>
+    <p>The paper expands the dimension inside the FFN. Let’s use \(d_{ff} = 6\) for our small example (real models use \(d_{ff} = 4 \times d_{\text{model}}\) or more).</p>
+    <p>The first FFN layer uses a weight matrix \(W_1\) of shape \(d_{\text{model}} \times d_{ff}\) (here \(4 \times 6\)) and a bias \(b_1\) of size 6. Let’s choose simple values:</p>
+    <div class="matrix-display">
+        <div>
+            \[
+            W_1 = \begin{bmatrix}
+            1 & 0 & 1 & 0 & 1 & 0 \\
+            0 & 1 & 0 & 1 & 0 & 1 \\
+            1 & 1 & 1 & 1 & 1 & 1 \\
+            0 & 0 & 1 & 1 & 0 & 0
+            \end{bmatrix}
+            \]
+            <div class="caption">\(W_1\) (4 × 6)</div>
+        </div>
+        <div>
+            \[
+            b_1 = [0,\; 1,\; 0,\; 1,\; 0,\; 1]
+            \]
+            <div class="caption">\(b_1\) (size 6)</div>
+        </div>
+    </div>
+
+    <p>Compute \(H = Z W_1 + b_1\). For row 1 (\(Z_1 = [6.906, 6.860, 7.906, 7.860]\)):</p>
+    <div class="math-block">
+        \[
+        H_{1,1} = 6.906\cdot1 + 6.860\cdot0 + 7.906\cdot1 + 7.860\cdot0 + 0 = 6.906 + 7.906 = 14.812
+        \]
+        \[
+        H_{1,2} = 6.906\cdot0 + 6.860\cdot1 + 7.906\cdot1 + 7.860\cdot0 + 1 = 6.860 + 7.906 + 1 = 15.766
+        \]
+        \[
+        H_{1,3} = 6.906\cdot1 + 6.860\cdot0 + 7.906\cdot1 + 7.860\cdot1 + 0 = 6.906 + 7.906 + 7.860 = 22.672
+        \]
+        \[
+        H_{1,4} = 6.906\cdot0 + 6.860\cdot1 + 7.906\cdot1 + 7.860\cdot1 + 1 = 6.860 + 7.906 + 7.860 + 1 = 23.626
+        \]
+        \[
+        H_{1,5} = 6.906\cdot1 + 6.860\cdot0 + 7.906\cdot1 + 7.860\cdot0 + 0 = 6.906 + 7.906 = 14.812
+        \]
+        \[
+        H_{1,6} = 6.906\cdot0 + 6.860\cdot1 + 7.906\cdot1 + 7.860\cdot0 + 1 = 6.860 + 7.906 + 1 = 15.766
+        \]
+    </div>
+    <p>Repeating for all four rows gives the \(4 \times 6\) hidden matrix:</p>
+    <div class="math-block">
+        \[
+        H = Z W_1 + b_1 \approx
+        \begin{bmatrix}
+        14.812 & 15.766 & 22.672 & 23.626 & 14.812 & 15.766 \\
+        12.776 & 12.941 & 19.776 & 20.941 & 12.776 & 12.941 \\
+        13.576 & 16.577 & 23.576 & 25.577 & 13.576 & 16.577 \\
+        14.829 & 14.780 & 22.829 & 23.780 & 14.829 & 14.780
+        \end{bmatrix}
+        \]
+    </div>
+
+    <h3>7.3 Step 3: Apply ReLU (the nonlinearity)</h3>
+    <div class="definition">
+        <strong>📘 Definition — ReLU:</strong> The rectified linear unit, defined as \(\max(0, x)\). It replaces every negative number with 0 and leaves positive numbers unchanged. This is the source of nonlinearity in the FFN.
+    </div>
+    <p>Our values in \(H\) are all positive, so ReLU does nothing here. In real models, many pre‑activations are negative and get clipped to zero.</p>
+    <div class="math-block">
+        \[
+        \text{ReLU}(H) = H \quad \text{(all entries already positive)}
+        \]
+    </div>
+
+    <h3>7.4 Step 4: Second FFN layer (project back to \(d_{\text{model}}\))</h3>
+    <p>The second layer uses a weight matrix \(W_2\) of shape \(d_{ff} \times d_{\text{model}}\) (here \(6 \times 4\)) and a bias \(b_2\) of size 4. Let’s choose:</p>
+    <div class="matrix-display">
+        <div>
+            \[
+            W_2 = \begin{bmatrix}
+            1 & 0 & 1 & 0 \\
+            0 & 1 & 0 & 1 \\
+            1 & 1 & 0 & 0 \\
+            0 & 0 & 1 & 1 \\
+            1 & 0 & 0 & 1 \\
+            0 & 1 & 1 & 0
+            \end{bmatrix}
+            \]
+            <div class="caption">\(W_2\) (6 × 4)</div>
+        </div>
+        <div>
+            \[
+            b_2 = [0,\; 0,\; 0,\; 0]
+            \]
+            <div class="caption">\(b_2\) (size 4)</div>
+        </div>
+    </div>
+
+    <p>Compute \(\text{FFN}(Z) = H W_2 + b_2\). For row 1 (\(H_1 = [14.812, 15.766, 22.672, 23.626, 14.812, 15.766]\)):</p>
+    <div class="math-block">
+        \[
+        \text{FFN}_1[1] = 14.812 + 22.672 + 14.812 = 52.296
+        \]
+        \[
+        \text{FFN}_1[2] = 15.766 + 22.672 + 15.766 = 54.204
+        \]
+        \[
+        \text{FFN}_1[3] = 14.812 + 15.766 + 23.626 = 54.204
+        \]
+        \[
+        \text{FFN}_1[4] = 15.766 + 23.626 + 14.812 = 54.204
+        \]
+    </div>
+    <p>Repeating for all four rows gives the \(4 \times 4\) FFN output:</p>
+    <div class="math-block">
+        \[
+        \text{FFN}(Z) \approx
+        \begin{bmatrix}
+        52.296 & 54.204 & 54.204 & 54.204 \\
+        45.552 & 47.717 & 33.718 & 33.718 \\
+        50.728 & 53.753 & 52.728 & 52.728 \\
+        52.609 & 51.609 & 37.609 & 38.609
+        \end{bmatrix}
+        \]
+    </div>
+
+    <h3>7.5 Step 5: Add another residual connection</h3>
+    <p>Finally, we add \(Z\) back to the FFN output (another residual connection) and optionally apply layer normalization:</p>
+    <div class="math-block">
+        \[
+        \text{Output of block} = Z + \text{FFN}(Z)
+        \]
+    </div>
+    <p>This is the input to the <strong>next</strong> Transformer block. The whole process (attention → output projection → residual → FFN → residual) repeats \(N\) times (in the paper, \(N = 6\) for both encoder and decoder).</p>
+
+    <div class="note">
+        💡 <strong>Why the FFN matters:</strong> Without the FFN, the Transformer would just be a stack of weighted averages. The FFN gives the model the ability to apply nonlinear, token‑specific transformations, which is essential for learning complex language patterns.
+    </div>
+
+    <!-- =============================== -->
+    <h2>8. Multi‑head attention (a quick look)</h2>
+    <p>Instead of doing attention once, the Transformer does it several times in parallel with different weight matrices. Each parallel run is called a <span class="keyterm">head</span>.</p>
+
+    <div class="definition">
+        <strong>📘 Definition — Multi‑head attention:</strong> Running \(h\) independent attention operations (heads) with different \(W^Q_i, W^K_i, W^V_i\), then concatenating the outputs and projecting them with a final weight matrix \(W^O\).
+    </div>
+
+    <div class="math-block">
+        \[
+        \text{head}_i = \text{Attention}(Q W^Q_i,\; K W^K_i,\; V W^V_i)
+        \]
+        \[
+        \text{MultiHead}(Q,K,V) = \text{Concat}(\text{head}_1, \dots, \text{head}_h)\, W^O
+        \]
+    </div>
+
+    <p>Each head typically uses a smaller dimension, e.g., \(d_k = d_v = d_{\text{model}} / h\), so the concatenated heads have size \(h \cdot d_v = d_{\text{model}}\), and \(W^O\) is square. This is why in a real Transformer the residual add works without any shape tricks.</p>
+
+    <!-- =============================== -->
+    <h2>9. Positional encoding (a quick look)</h2>
+    <p>Attention is <em>permutation‑invariant</em>: if you shuffle the tokens, the attention outputs shuffle the same way — the model has no sense of order. But word order matters! So we add a <span class="keyterm">positional encoding</span> to each token embedding.</p>
+
+    <div class="definition">
+        <strong>📘 Definition — Positional encoding:</strong> A vector of the same dimension as the embedding (\(d_{\text{model}}\)) that encodes the position of a token in the sequence. It is added element‑wise to the token embedding before the first attention layer.
+    </div>
+
+    <p>The paper uses sine and cosine functions:</p>
+    <div class="math-block">
+        \[
+        PE_{(pos, 2i)} = \sin\!\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)
+        \]
+        \[
+        PE_{(pos, 2i+1)} = \cos\!\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)
+        \]
+    </div>
+    <p>Here \(pos\) is the position (0, 1, 2, …) and \(i\) indexes the dimension. The result is a vector with the same length as the token embedding, so the two can be added.</p>
+
+    <div class="example-box">
+        <strong>📝 Example:</strong> With \(d_{\text{model}} = 4\) and \(pos = 1\) (i.e., the second token, “really”):
+        \[
+        PE(1,0) = \sin(1) \approx 0.841
+        \]
+        \[
+        PE(1,1) = \cos(1) \approx 0.540
+        \]
+        \[
+        PE(1,2) = \sin(1/100) \approx 0.010
+        \]
+        \[
+        PE(1,3) = \cos(1/100) \approx 0.99995
+        \]
+        These four numbers get added element‑wise to the token’s embedding vector. Without this, “AI really rocks.” and “rocks really AI.” would look identical to the attention layer.
+    </div>
+
+    <!-- =============================== -->
+    <h2>10. Shape cheat‑sheet</h2>
+    <table>
+        <tr><th>Matrix</th><th>Shape</th><th>Meaning</th></tr>
+        <tr><td>\(X\)</td><td>4 × 4</td><td>4 tokens, 4‑dim embeddings</td></tr>
+        <tr><td>\(W^Q, W^K, W^V\)</td><td>4 × 3</td><td>project to 3‑dim Q/K/V</td></tr>
+        <tr><td>\(Q, K, V\)</td><td>4 × 3</td><td>4 tokens, 3‑dim queries/keys/values</td></tr>
+        <tr><td>\(QK^\top\)</td><td>4 × 4</td><td>similarity between each query and key</td></tr>
+        <tr><td>\(A\) (softmax)</td><td>4 × 4</td><td>attention weights (rows sum to 1)</td></tr>
+        <tr><td>Raw attention \(AV\)</td><td>4 × 3</td><td>weighted sum of values per token</td></tr>
+        <tr><td>\(W^O\)</td><td>3 × 4</td><td>projects back to \(d_{\text{model}}\)</td></tr>
+        <tr><td>Projected output</td><td>4 × 4</td><td>matches \(X\) for the residual add</td></tr>
+        <tr><td>\(W_1\) (FFN)</td><td>4 × 6</td><td>expands to \(d_{ff}\) (here 6)</td></tr>
+        <tr><td>\(W_2\) (FFN)</td><td>6 × 4</td><td>projects back to \(d_{\text{model}}\)</td></tr>
+        <tr><td>FFN output</td><td>4 × 4</td><td>new representation per token</td></tr>
+    </table>
+
+    <div class="example-box">
+        <strong>📝 Paper‑style summary:</strong><br>
+        Input tokens → token IDs → embeddings → \(X\) → multiply by \(W^Q, W^K, W^V\) → \(Q, K, V\) → \(QK^\top\) → scale by \(\sqrt{d_k}\) → softmax → \(A\) → multiply by \(V\) → project with \(W^O\) → residual add with \(X\) → feed‑forward network (expand with \(W_1\), ReLU, project with \(W_2\)) → residual add again → next block. Add positional encodings at the input, use multi‑head attention for parallel subspaces, and stack \(N\) such blocks.
+    </div>
+
+    <!-- =============================== -->
+    <!-- ============= APPENDIX A ============= -->
+    <!-- =============================== -->
+    <div class="appendix">
+        <h2>Appendix A. How the matrices are learned (gradients)</h2>
+
+        <p>Throughout the main walkthrough, we chose concrete values for the embedding matrix \(E\) and for the weight matrices \(W^Q, W^K, W^V, W^O, W_1, W_2\). We said these were <em>“already given.”</em> In reality, all of these matrices are <strong>parameters</strong> that the model <em>learns</em> from data. This appendix explains how that learning works.</p>
+
+        <h3>A.1 Which matrices are learned?</h3>
+        <p>Every matrix that appears in the forward pass — except the inputs themselves — is a learned parameter. In our tiny example:</p>
+        <table>
+            <tr><th>Matrix</th><th>Shape</th><th>Role</th></tr>
+            <tr><td>\(E\)</td><td>4 × 4</td><td>embedding matrix</td></tr>
+            <tr><td>\(W^Q, W^K, W^V\)</td><td>4 × 3</td><td>project \(X\) into Q, K, V</td></tr>
+            <tr><td>\(W^O\)</td><td>3 × 4</td><td>project attention output back</td></tr>
+            <tr><td>\(W_1, b_1\)</td><td>4 × 6, 6</td><td>first FFN layer</td></tr>
+            <tr><td>\(W_2, b_2\)</td><td>6 × 4, 4</td><td>second FFN layer</td></tr>
+        </table>
+        <p>In the base Transformer of the paper, this adds up to about 65 million parameters. In the big model, about 213 million. In modern large language models, hundreds of billions.</p>
+
+        <h3>A.2 The four‑step training loop</h3>
+        <p>Training repeats the same four steps for many examples:</p>
+        <div class="loop-diagram">┌──────────────────────────────────────────────────────┐
+│  1. Forward pass: compute the prediction             │
+│  2. Compute loss: compare prediction to the truth    │
+│  3. Backward pass: compute gradients of the loss     │
+│     with respect to every parameter                  │
+│  4. Update: nudge each parameter slightly in the     │
+│     direction that reduces the loss                  │
+└──────────────────────────────────────────────────────┘</div>
+
+        <h4>Step 1: Forward pass</h4>
+        <p>Exactly what we did in the walkthrough:</p>
+        <div class="math-block">
+            \[
+            X \;\to\; Q = XW^Q,\; K = XW^K,\; V = XW^V \;\to\; \text{Attention} \;\to\; W^O \;\to\; \text{FFN} \;\to\; \text{logits}
+            \]
+        </div>
+        <p>At the start of training the parameters are random. After each update they get better. Our hand‑chosen matrices are plausible final values — the kind of numbers the model might converge to after training.</p>
+
+        <h4>Step 2: Compute the loss</h4>
+        <p>The model produces a prediction, e.g., a probability distribution over the vocabulary for “what comes next.” The <strong>loss</strong> \(\mathcal{L}\) measures how far off the prediction is from the true target. A common choice is <strong>cross‑entropy loss</strong>:</p>
+        <div class="math-block">
+            \[
+            \mathcal{L} = -\sum_{c} y_c \log(\hat{y}_c)
+            \]
+        </div>
+        <p>where \(y_c\) is 1 for the correct class and 0 otherwise, and \(\hat{y}_c\) is the model’s predicted probability for class \(c\). If the model is confident and correct, \(\mathcal{L}\) is small. If it is confident and wrong, \(\mathcal{L}\) is huge.</p>
+
+        <h4>Step 3: Backward pass — compute gradients</h4>
+        <div class="definition">
+            <strong>📘 Definition — Gradient:</strong> The gradient \(\dfrac{\partial \mathcal{L}}{\partial W}\) is a matrix of the same shape as \(W\). Each entry tells us how the loss changes when we wiggle the corresponding entry of \(W\).
+        </div>
+        <p>Three useful facts about gradients:</p>
+        <ul style="margin-left: 1.8rem; margin-bottom: 1rem;">
+            <li>If the gradient is <strong>positive</strong>, increasing that entry increases the loss → we should <strong>decrease</strong> it.</li>
+            <li>If the gradient is <strong>negative</strong>, increasing that entry decreases the loss → we should <strong>increase</strong> it.</li>
+            <li>If the gradient is <strong>zero</strong>, that entry is already at a local optimum.</li>
+        </ul>
+        <p>The gradients are computed by the <strong>chain rule</strong> of calculus, working backward from the loss through every operation:</p>
+        <div class="math-block">
+            \[
+            \frac{\partial \mathcal{L}}{\partial W^Q} = \frac{\partial \mathcal{L}}{\partial Q} \cdot \frac{\partial Q}{\partial W^Q}
+            \]
+        </div>
+        <p>In practice we never compute these by hand — a library like PyTorch or TensorFlow builds a <strong>computational graph</strong> during the forward pass and then automatically computes all gradients. This is called <strong>autograd</strong> or <strong>backpropagation</strong>.</p>
+
+        <h4>Step 4: Update each parameter</h4>
+        <div class="definition">
+            <strong>📘 Definition — Gradient descent update:</strong> Once we have the gradient, we update each parameter:
+            \[
+            W \;\leftarrow\; W - \eta \,\frac{\partial \mathcal{L}}{\partial W}
+            \]
+            where \(\eta\) is the <strong>learning rate</strong> (a small positive number, e.g., 0.001).
+        </div>
+        <p>This is called <strong>gradient descent</strong>. Because we use a small batch of examples at a time, it is usually called <strong>mini‑batch stochastic gradient descent</strong> (SGD).</p>
+
+        <h3>A.3 A tiny numeric example</h3>
+        <p>Suppose we have a single parameter \(w = 2.0\), the loss at this value is \(\mathcal{L} = 3.0\), and the gradient is \(\dfrac{\partial \mathcal{L}}{\partial w} = 1.5\). With learning rate \(\eta = 0.1\):</p>
+        <div class="math-block">
+            \[
+            w_{\text{new}} = 2.0 - 0.1 \times 1.5 = 2.0 - 0.15 = 1.85
+            \]
+        </div>
+        <p>We took a small step in the direction that reduces the loss. Repeat this millions of times and \(w\) converges to a good value.</p>
+        <p>For a <strong>matrix</strong> \(W\) of shape \(m \times n\), exactly the same formula applies <strong>element‑wise</strong>:</p>
+        <div class="math-block">
+            \[
+            W_{i,j} \;\leftarrow\; W_{i,j} - \eta \left(\frac{\partial \mathcal{L}}{\partial W}\right)_{i,j}
+            \]
+        </div>
+
+        <h3>A.4 Applying this to our matrices</h3>
+        <p>For each of the matrices in our walkthrough, the update is:</p>
+        <div class="math-block">
+            \[
+            E \;\leftarrow\; E - \eta \,\frac{\partial \mathcal{L}}{\partial E}
+            \]
+            \[
+            W^Q \;\leftarrow\; W^Q - \eta \,\frac{\partial \mathcal{L}}{\partial W^Q}, \quad
+            W^K \;\leftarrow\; W^K - \eta \,\frac{\partial \mathcal{L}}{\partial W^K}, \quad
+            W^V \;\leftarrow\; W^V - \eta \,\frac{\partial \mathcal{L}}{\partial W^V}
+            \]
+            \[
+            W^O \;\leftarrow\; W^O - \eta \,\frac{\partial \mathcal{L}}{\partial W^O}
+            \]
+            \[
+            W_1 \;\leftarrow\; W_1 - \eta \,\frac{\partial \mathcal{L}}{\partial W_1}, \quad
+            W_2 \;\leftarrow\; W_2 - \eta \,\frac{\partial \mathcal{L}}{\partial W_2}
+            \]
+        </div>
+        <p>The gradients flow backward through the softmax, the attention weights, the Q/K/V projections, the embeddings — all the way back to the input. This is why the whole computation must be differentiable: every operation we used (matrix multiplication, transpose, dot product, scaling, softmax, ReLU, addition) has a well‑defined derivative.</p>
+
+        <h3>A.5 Why Transformers need a few training tricks</h3>
+        <p>Training deep networks is delicate. The paper uses several tricks that are essential for the Transformer to work:</p>
+        <table>
+            <tr><th>Problem</th><th>Cause</th><th>Fix used in the paper</th></tr>
+            <tr><td>Vanishing / exploding gradients</td><td>Deep stacks of matrix multiplications</td><td>Residual connections + layer normalization</td></tr>
+            <tr><td>Unstable softmax</td><td>Large dot products push softmax to extremes</td><td>Scaling by \(1/\sqrt{d_k}\)</td></tr>
+            <tr><td>Slow convergence</td><td>Plain SGD is noisy</td><td>Adam optimizer</td></tr>
+            <tr><td>Overfitting</td><td>Too many parameters</td><td>Dropout, weight decay, large datasets</td></tr>
+        </table>
+
+        <h4>Adam optimizer</h4>
+        <p>The paper uses the <strong>Adam optimizer</strong>, which keeps a running estimate of the mean and variance of each gradient and adapts the learning rate per parameter. The update looks like:</p>
+        <div class="math-block">
+            \[
+            W \;\leftarrow\; W - \eta \,\frac{\hat{m}}{\sqrt{\hat{v}} + \epsilon}
+            \]
+        </div>
+        <p>where \(\hat{m}\) and \(\hat{v}\) are bias‑corrected moving averages of the gradient and its square, and \(\epsilon\) is a tiny number to avoid division by zero. You can think of Adam as “gradient descent, but each parameter gets its own tuned learning rate.”</p>
+
+        <h4>Residual connections and layer normalization</h4>
+        <p>Every sub‑layer in the paper wraps its computation with a residual connection and layer normalization:</p>
+        <div class="math-block">
+            \[
+            \text{LayerNorm}(X + \text{SubLayer}(X))
+            \]
+        </div>
+        <p>The residual connection (the \(+ X\)) gives gradients a direct path back to earlier layers, which prevents them from vanishing. Layer normalization rescales each token’s vector so its mean is 0 and variance is 1, which keeps activations stable across many layers.</p>
+
+        <h3>A.6 Summary</h3>
+        <ul style="margin-left: 1.8rem; margin-bottom: 1rem;">
+            <li>The matrices \(E, W^Q, W^K, W^V, W^O, W_1, W_2\) are all <strong>learned parameters</strong>.</li>
+            <li>Training is a repeated cycle: <strong>forward pass → loss → backward pass (gradients) → update</strong>.</li>
+            <li>The update rule is \(W \leftarrow W - \eta \,\partial \mathcal{L}/\partial W\).</li>
+            <li><strong>Backpropagation</strong> (automatic differentiation) computes the gradients using the chain rule.</li>
+            <li><strong>Adam</strong> is a smarter version of gradient descent used in the paper.</li>
+            <li><strong>Residual connections</strong> and <strong>layer normalization</strong> stabilize training in deep Transformers.</li>
+            <li>Everything we did in the main walkthrough — matrix multiplication, transpose, dot product, scaling, softmax, ReLU, addition — is differentiable, which is exactly what makes gradient‑based learning possible.</li>
+        </ul>
+    </div>
+
+    <!-- =============================== -->
+    <!-- ============= APPENDIX B: QUIZ ============= -->
+    <!-- =============================== -->
+    <div class="quiz">
+        <h2>Appendix B. Quiz — 50 questions</h2>
+        <div class="quiz-intro">
+            <p><strong>How it works:</strong> Click an answer to see immediate feedback. Your score updates as you go. You can reset at any time. There are 50 questions covering everything in this page — tokens, embeddings, Q/K/V, attention, softmax, scaling, \(W^O\), FFN, ReLU, multi‑head, positional encoding, and gradients.</p>
+        </div>
+
+        <div class="score-board">
+            <span class="score-text">Score: <span class="score-value" id="score">0</span> / <span id="answered">0</span> answered</span>
+            <button class="reset-btn" onclick="resetQuiz()">↻ Reset quiz</button>
+            <div class="progress-bar-outer" style="flex: 1 1 100%;">
+                <div class="progress-bar-inner" id="progressBar"></div>
+            </div>
+        </div>
+
+        <div id="quizContainer"></div>
+
+        <div class="final-score" id="finalScore">
+            <h3>🎉 Quiz complete!</h3>
+            <span class="big" id="finalScoreValue">0 / 50</span>
+            <p id="finalMessage"></p>
+            <p style="font-size: 0.9rem; margin-top: 1rem;">Reset the quiz to try again.</p>
+        </div>
+    </div>
+
+    <!-- =============================== -->
+    <div class="footer">
+        ⚡ From tokens to matrices — every number computed by hand.<br>
+        “Attention Is All You Need” (Vaswani et al., 2017) · Beginner‑friendly math walkthrough
+    </div>
+</div>
+
+<script>
+    // ===== Quiz data =====
+    const quizData = [
+        {
+            q: "What is a token in the context of NLP?",
+            options: [
+                "A small piece of text, usually a word or sub-word",
+                "A whole sentence",
+                "A mathematical symbol",
+                "An attention head"
+            ],
+            correct: 0,
+            explanation: "A token is a small piece of text — usually a word or sub-word — that the model processes. Tokenization splits text into tokens."
+        },
+        {
+            q: "What does the vocabulary of a model refer to?",
+            options: [
+                "The set of all distinct tokens the model knows",
+                "The list of weight matrices",
+                "The number of attention heads",
+                "The training dataset"
+            ],
+            correct: 0,
+            explanation: "The vocabulary is the set of all distinct tokens the model knows. Each token is assigned a unique integer ID."
+        },
+        {
+            q: "In our example, how many tokens does “AI really rocks.” produce?",
+            options: ["2", "3", "4", "5"],
+            correct: 2,
+            explanation: "It produces 4 tokens: “AI”, “really”, “rocks”, and “.” (the period becomes its own token in most tokenizers)."
+        },
+        {
+            q: "What is a token ID?",
+            options: [
+                "A unique integer assigned to each token in the vocabulary",
+                "A vector of real numbers",
+                "A weight in the attention matrix",
+                "The position of a token in a sentence"
+            ],
+            correct: 0,
+            explanation: "A token ID is a unique integer assigned to each token in the vocabulary. It is used as a row index into the embedding matrix."
+        },
+        {
+            q: "In most modern tokenizers, token IDs start at:",
+            options: ["1", "0", "-1", "Any number"],
+            correct: 1,
+            explanation: "Most modern tokenizers (WordPiece, BPE, SentencePiece) start IDs at 0."
+        },
+        {
+            q: "What is an embedding?",
+            options: [
+                "A dense vector of real numbers representing a token",
+                "A one-hot encoding of a token",
+                "A weight matrix in the FFN",
+                "A type of attention"
+            ],
+            correct: 0,
+            explanation: "An embedding is a dense vector of real numbers that represents a token. Similar tokens tend to have similar vectors."
+        },
+        {
+            q: "What is the embedding dimension \(d_{\\text{model}}\)?",
+            options: [
+                "The length of the vector used to represent each token",
+                "The number of tokens in the vocabulary",
+                "The number of attention heads",
+                "The number of Transformer layers"
+            ],
+            correct: 0,
+            explanation: "The embedding dimension is the length of the vector that represents each token. It is the number of columns in the embedding matrix."
+        },
+        {
+            q: "The embedding matrix \(E\) has shape:",
+            options: [
+                "\(|V| \\times d_{\\text{model}}\)",
+                "\(d_{\\text{model}} \\times |V|\)",
+                "\(d_k \\times d_v\)",
+                "\(n \\times n\)"
+            ],
+            correct: 0,
+            explanation: "The embedding matrix has one row per vocabulary entry and one column per embedding dimension, so its shape is \(|V| \\times d_{\\text{model}}\)."
+        },
+        {
+            q: "In our example, \(d_{\\text{model}}\) was set to:",
+            options: ["2", "3", "4", "6"],
+            correct: 2,
+            explanation: "We chose \(d_{\\text{model}} = 4\) to keep the arithmetic simple. Every token becomes a length-4 vector."
+        },
+        {
+            q: "The input matrix \(X\) has shape:",
+            options: [
+                "\(n \\times d_{\\text{model}}\) (number of tokens × embedding dim)",
+                "\(d_{\\text{model}} \\times n\)",
+                "\(d_k \\times d_v\)",
+                "\(|V| \\times d_{\\text{model}}\)"
+            ],
+            correct: 0,
+            explanation: "\(X\) stacks the token embedding vectors as rows, giving shape \(n \\times d_{\\text{model}}\) where \(n\) is the number of tokens."
+        },
+        {
+            q: "How many rows does \(X\) have in our example?",
+            options: ["2", "3", "4", "5"],
+            correct: 2,
+            explanation: "We have 4 tokens (“AI”, “really”, “rocks”, “.”), so \(X\) has 4 rows."
+        },
+        {
+            q: "Which three matrices does attention compute from \(X\)?",
+            options: [
+                "Q, K, V",
+                "W, B, X",
+                "E, F, G",
+                "A, B, C"
+            ],
+            correct: 0,
+            explanation: "Attention computes Q (queries), K (keys), and V (values) from \(X\)."
+        },
+        {
+            q: "Are Q, K, and V matrices or vectors?",
+            options: [
+                "They are matrices; each row is a vector for one token",
+                "They are single vectors",
+                "They are scalars",
+                "They are the same as X"
+            ],
+            correct: 0,
+            explanation: "Q, K, and V are matrices. Each row of Q is the query vector for one token. The same applies to K and V."
+        },
+        {
+            q: "The query matrix Q is computed as:",
+            options: [
+                "\(Q = X W^Q\)",
+                "\(Q = X + W^Q\)",
+                "\(Q = W^Q X^\\top\)",
+                "\(Q = X^\\top W^Q\)"
+            ],
+            correct: 0,
+            explanation: "Q = X W^Q. Multiplying X by the learned weight matrix W^Q projects the token vectors into query space."
+        },
+        {
+            q: "What does a query vector represent?",
+            options: [
+                "What a token is looking for",
+                "What a token offers",
+                "The actual content of a token",
+                "The position of a token"
+            ],
+            correct: 0,
+            explanation: "A query vector represents what a token is looking for. It is compared against every key to decide where to pay attention."
+        },
+        {
+            q: "What does a key vector represent?",
+            options: [
+                "What a token offers",
+                "What a token is looking for",
+                "The output of the FFN",
+                "The token's embedding"
+            ],
+            correct: 0,
+            explanation: "A key vector represents what a token offers. Each query is compared to every key to compute a similarity score."
+        },
+        {
+            q: "What does a value vector represent?",
+            options: [
+                "The actual content of a token",
+                "What a token is looking for",
+                "What a token offers",
+                "The positional encoding"
+            ],
+            correct: 0,
+            explanation: "A value vector represents the actual content of a token. Once attention weights are computed, we take a weighted sum of the values."
+        },
+        {
+            q: "In our example, what is the shape of \(W^Q\), \(W^K\), and \(W^V\)?",
+            options: ["4 × 4", "4 × 3", "3 × 4", "3 × 3"],
+            correct: 1,
+            explanation: "We chose the weight matrices to have shape 4 × 3, so Q, K, and V each have shape 4 × 3 (i.e., \(d_k = d_v = 3\))."
+        },
+        {
+            q: "The shape of Q in our example is:",
+            options: ["4 × 4", "4 × 3", "3 × 4", "3 × 3"],
+            correct: 1,
+            explanation: "Q = X W^Q, where X is 4 × 4 and W^Q is 4 × 3, so Q is 4 × 3."
+        },
+        {
+            q: "In our example, what is the first row of Q?",
+            options: [
+                "[3, 1, 2]",
+                "[1, 2, 0]",
+                "[4, 2, 3]",
+                "[1, 3, 3]"
+            ],
+            correct: 0,
+            explanation: "Row 1 of Q is [3, 1, 2] — the query vector for the token “AI”."
+        },
+        {
+            q: "The shape of K in our example is:",
+            options: ["4 × 4", "4 × 3", "3 × 4", "3 × 3"],
+            correct: 1,
+            explanation: "K = X W^K, so K is 4 × 3. Each row is the key vector for one token."
+        },
+        {
+            q: "The shape of V in our example is:",
+            options: ["4 × 4", "4 × 3", "3 × 4", "3 × 3"],
+            correct: 1,
+            explanation: "V = X W^V, so V is 4 × 3. Each row is the value vector for one token."
+        },
+        {
+            q: "The attention formula is:",
+            options: [
+                "\(\\text{softmax}(QK^\\top / \\sqrt{d_k}) V\)",
+                "\(\\text{softmax}(Q + K) V\)",
+                "\(\\text{softmax}(QK^\\top) + V\)",
+                "\(Q K^\\top V\)"
+            ],
+            correct: 0,
+            explanation: "Attention(Q, K, V) = softmax(QK^\\top / \\sqrt{d_k}) V. The scaling by 1/\\sqrt{d_k} stabilizes the softmax."
+        },
+        {
+            q: "The shape of \(QK^\\top\) in our example is:",
+            options: ["4 × 4", "4 × 3", "3 × 4", "3 × 3"],
+            correct: 0,
+            explanation: "Q is 4 × 3 and K^\\top is 3 × 4, so QK^\\top is 4 × 4. Each entry (i, j) is the dot product of query i and key j."
+        },
+        {
+            q: "What does entry (i, j) of \(QK^\\top\) represent?",
+            options: [
+                "The dot product of query i and key j",
+                "The output for token i",
+                "The attention weight for token j",
+                "The value vector for token i"
+            ],
+            correct: 0,
+            explanation: "Entry (i, j) of QK^\\top is the dot product of the query vector for token i and the key vector for token j. It measures their similarity."
+        },
+        {
+            q: "What does a dot product measure?",
+            options: [
+                "How similar two vectors are",
+                "How large a vector is",
+                "How many tokens there are",
+                "The learning rate"
+            ],
+            correct: 0,
+            explanation: "The dot product is the sum of element-wise products of two vectors. Larger values indicate greater similarity."
+        },
+        {
+            q: "Why do we scale \(QK^\\top\) by \(1/\\sqrt{d_k}\)?",
+            options: [
+                "To keep values in a range where softmax has useful gradients",
+                "To make the matrix square",
+                "To remove negative numbers",
+                "To increase the learning rate"
+            ],
+            correct: 0,
+            explanation: "Without scaling, dot products grow with \(d_k\), pushing softmax into regions with extremely small gradients. Dividing by \\sqrt{d_k} keeps values at a reasonable scale."
+        },
+        {
+            q: "In our example, \(d_k = 3\), so \(\\sqrt{d_k} \\approx\):",
+            options: ["1.414", "1.732", "2.000", "3.000"],
+            correct: 1,
+            explanation: "\\sqrt{3} \\approx 1.732."
+        },
+        {
+            q: "What does softmax do to a vector?",
+            options: [
+                "Turns it into a probability distribution (all non-negative, sums to 1)",
+                "Makes it longer",
+                "Removes all negative numbers",
+                "Sorts it"
+            ],
+            correct: 0,
+            explanation: "Softmax(x_i) = e^{x_i} / \\sum_j e^{x_j}. The output is a probability distribution: every entry is between 0 and 1, and the entries sum to 1."
+        },
+        {
+            q: "Softmax is applied to \(QK^\\top / \\sqrt{d_k}\\) in which direction?",
+            options: [
+                "Row-wise (each row becomes a probability distribution over keys)",
+                "Column-wise",
+                "Element-wise",
+                "It is not applied"
+            ],
+            correct: 0,
+            explanation: "Softmax is applied row-wise. Each row becomes a probability distribution over the keys — this is the attention weight for that query."
+        },
+        {
+            q: "After softmax, each row of the attention weight matrix \(A\):",
+            options: [
+                "Sums to 1",
+                "Sums to 0",
+                "Is all zeros",
+                "Is all ones"
+            ],
+            correct: 0,
+            explanation: "Each row of A is a probability distribution, so it sums to 1."
+        },
+        {
+            q: "In our example, the token “AI” attends most strongly to which token?",
+            options: [
+                "“rocks” (about 93%)",
+                "“really” (about 90%)",
+                "“.” (about 90%)",
+                "Itself (about 90%)"
+            ],
+            correct: 0,
+            explanation: "Row 1 of A is approximately [0.009, 0.052, 0.930, 0.009]. The token “AI” attends about 93% to “rocks”."
+        },
+        {
+            q: "The raw attention output is computed as:",
+            options: [
+                "\(A V\)",
+                "\(A + V\)",
+                "\(A Q\)",
+                "\(A K\)"
+            ],
+            correct: 0,
+            explanation: "The raw attention output is A V, where A is the attention weight matrix and V is the value matrix. It is a weighted sum of the value vectors."
+        },
+        {
+            q: "The shape of the raw attention output \(AV\) in our example is:",
+            options: ["4 × 4", "4 × 3", "3 × 4", "3 × 3"],
+            correct: 1,
+            explanation: "A is 4 × 4 and V is 4 × 3, so AV is 4 × 3. This does not match X (which is 4 × 4), so we need W^O."
+        },
+        {
+            q: "Why do we need the output projection \(W^O\)?",
+            options: [
+                "To project the attention output back to \(d_{\\text{model}}\) so it can be added to X",
+                "To increase the number of heads",
+                "To apply softmax again",
+                "To compute the loss"
+            ],
+            correct: 0,
+            explanation: "In our simplified single-head example, the raw attention output is 4 × 3 while X is 4 × 4. W^O (shape 3 × 4) projects the attention output back to 4 × 4 so the residual add works."
+        },
+        {
+            q: "In a real multi-head Transformer, \(W^O\) is:",
+            options: [
+                "Square, of shape \(d_{\\text{model}} \\times d_{\\text{model}}\)",
+                "Rectangular, of shape \(d_v \\times d_{\\text{model}}\)",
+                "The same as \(W^Q\)",
+                "Not used"
+            ],
+            correct: 0,
+            explanation: "In multi-head attention with h heads of size d_v = d_model / h, the concatenated heads have size h · d_v = d_model. So W^O is square, d_model × d_model."
+        },
+        {
+            q: "In our example, \(W^O\) has shape:",
+            options: ["3 × 4", "4 × 3", "4 × 4", "3 × 3"],
+            correct: 0,
+            explanation: "We chose W^O to be 3 × 4 so that (AV) W^O is 4 × 4, matching X."
+        },
+        {
+            q: "What is a residual connection?",
+            options: [
+                "Adding the input of a sub-layer back to its output",
+                "Multiplying the input by a weight matrix",
+                "Applying softmax twice",
+                "Removing the bias"
+            ],
+            correct: 0,
+            explanation: "A residual connection adds the input of a sub-layer back to its output: output = input + SubLayer(input). It helps gradients flow during training."
+        },
+        {
+            q: "In our example, after the residual add \(Z = X + \\text{Proj}\), the shape of \(Z\) is:",
+            options: ["4 × 4", "4 × 3", "3 × 4", "3 × 3"],
+            correct: 0,
+            explanation: "Both X and Proj are 4 × 4, so Z is 4 × 4."
+        },
+        {
+            q: "The feed-forward network (FFN) is applied:",
+            options: [
+                "To each token’s vector independently",
+                "Across all tokens at once",
+                "Only to the first token",
+                "Only to the last token"
+            ],
+            correct: 0,
+            explanation: "The FFN is applied row-wise, i.e., to each token’s vector independently. It does not mix tokens — that already happened in attention."
+        },
+        {
+            q: "The FFN in the paper is:",
+            options: [
+                "Two linear layers with a ReLU in between",
+                "One linear layer",
+                "Three linear layers",
+                "Just a softmax"
+            ],
+            correct: 0,
+            explanation: "FFN(x) = max(0, x W_1 + b_1) W_2 + b_2. It is two linear layers with a ReLU nonlinearity in between."
+        },
+        {
+            q: "In our example, \(d_{ff}\) was set to:",
+            options: ["3", "4", "6", "8"],
+            correct: 2,
+            explanation: "We chose d_ff = 6 for our small example. Real models use d_ff = 4 × d_model or more."
+        },
+        {
+            q: "What is ReLU?",
+            options: [
+                "max(0, x) — replaces negative numbers with 0",
+                "A type of softmax",
+                "A weight matrix",
+                "A positional encoding"
+            ],
+            correct: 0,
+            explanation: "ReLU(x) = max(0, x). It replaces every negative number with 0 and leaves positive numbers unchanged."
+        },
+        {
+            q: "Why does the FFN include a nonlinearity?",
+            options: [
+                "Without it, stacking linear layers would still be linear",
+                "To make the matrix square",
+                "To apply softmax",
+                "To reduce the number of parameters"
+            ],
+            correct: 0,
+            explanation: "Stacking linear operations gives another linear operation. The ReLU nonlinearity gives the FFN the ability to learn complex, nonlinear transformations."
+        },
+        {
+            q: "What is multi-head attention?",
+            options: [
+                "Running several attention operations in parallel with different weight matrices, then concatenating and projecting",
+                "A single attention operation with a larger matrix",
+                "Applying softmax multiple times",
+                "Stacking FFN layers"
+            ],
+            correct: 0,
+            explanation: "Multi-head attention runs h independent attention operations (heads) with different W^Q_i, W^K_i, W^V_i, then concatenates the outputs and projects with W^O."
+        },
+        {
+            q: "What is the purpose of positional encoding?",
+            options: [
+                "To inject order information, since attention is permutation-invariant",
+                "To reduce the number of parameters",
+                "To apply softmax",
+                "To replace the FFN"
+            ],
+            correct: 0,
+            explanation: "Attention is permutation-invariant — it has no sense of order. Positional encoding adds order information to the token embeddings before the first attention layer."
+        },
+        {
+            q: "The positional encoding in the paper uses:",
+            options: [
+                "Sine and cosine functions of different frequencies",
+                "Only the token ID",
+                "A learned embedding",
+                "Random noise"
+            ],
+            correct: 0,
+            explanation: "The paper uses PE(pos, 2i) = sin(pos / 10000^{2i/d_model}) and PE(pos, 2i+1) = cos(pos / 10000^{2i/d_model})."
+        },
+        {
+            q: "Which matrices in the Transformer are learned parameters?",
+            options: [
+                "\(E, W^Q, W^K, W^V, W^O, W_1, W_2\) (and biases)",
+                "Only \(W^Q\) and \(W^K\)",
+                "Only the embeddings",
+                "None of them — they are all hand-coded"
+            ],
+            correct: 0,
+            explanation: "All of E, W^Q, W^K, W^V, W^O, W_1, W_2 (and the biases) are learned parameters. They start random and are updated by gradient descent."
+        },
+        {
+            q: "In gradient descent, the update rule is:",
+            options: [
+                "W ← W − η ∂L/∂W",
+                "W ← W + η ∂L/∂W",
+                "W ← ∂L/∂W",
+                "W ← W × η"
+            ],
+            correct: 0,
+            explanation: "W ← W − η ∂L/∂W, where η is the learning rate and ∂L/∂W is the gradient of the loss with respect to W. We step in the direction that reduces the loss."
+        },
+        {
+            q: "Why do Transformers use residual connections and layer normalization?",
+            options: [
+                "To stabilize training and prevent vanishing/exploding gradients in deep stacks",
+                "To increase the learning rate",
+                "To remove the need for softmax",
+                "To reduce the vocabulary size"
+            ],
+            correct: 0,
+            explanation: "Residual connections give gradients a direct path back to earlier layers. Layer normalization rescales each token’s vector to keep activations stable. Both are essential for training deep Transformers."
+        }
+    ];
+
+    // ===== Quiz state =====
+    let score = 0;
+    let answered = 0;
+    const totalQuestions = quizData.length;
+    const userAnswers = new Array(totalQuestions).fill(null);
+
+    // ===== Build quiz =====
+    function buildQuiz() {
+        const container = document.getElementById('quizContainer');
+        container.innerHTML = '';
+        quizData.forEach((item, i) => {
+            const qDiv = document.createElement('div');
+            qDiv.className = 'question';
+            qDiv.id = 'q' + i;
+
+            const qText = document.createElement('div');
+            qText.className = 'question-text';
+            qText.innerHTML = `<span class="q-num">Q${i + 1}</span> ${item.q}`;
+            qDiv.appendChild(qText);
+
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'options';
+            item.options.forEach((opt, j) => {
+                const btn = document.createElement('button');
+                btn.className = 'option';
+                btn.innerHTML = String.fromCharCode(65 + j) + ') ' + opt;
+                btn.onclick = () => handleAnswer(i, j, btn);
+                optionsDiv.appendChild(btn);
+            });
+            qDiv.appendChild(optionsDiv);
+
+            const feedback = document.createElement('div');
+            feedback.className = 'feedback';
+            feedback.id = 'fb' + i;
+            qDiv.appendChild(feedback);
+
+            container.appendChild(qDiv);
+        });
+    }
+
+    // ===== Handle answer =====
+    function handleAnswer(qIndex, optIndex, btn) {
+        if (userAnswers[qIndex] !== null) return; // already answered
+
+        const item = quizData[qIndex];
+        const qDiv = document.getElementById('q' + qIndex);
+        const feedback = document.getElementById('fb' + qIndex);
+        const allOptions = qDiv.querySelectorAll('.option');
+
+        userAnswers[qIndex] = optIndex;
+        answered++;
+
+        // Disable all options
+        allOptions.forEach((o, j) => {
+            o.classList.add('disabled');
+            o.onclick = null;
+            if (j === item.correct) {
+                o.classList.add('correct-option');
+            }
+            if (j === optIndex && j !== item.correct) {
+                o.classList.add('wrong-option');
+            }
+        });
+
+        // Show feedback
+        if (optIndex === item.correct) {
+            score++;
+            qDiv.classList.add('correct');
+            feedback.className = 'feedback show correct-fb';
+            feedback.innerHTML = `<strong>✓ Correct!</strong> ${item.explanation}`;
+        } else {
+            qDiv.classList.add('incorrect');
+            feedback.className = 'feedback show incorrect-fb';
+            feedback.innerHTML = `<strong>✗ Not quite.</strong> The correct answer is <strong>${String.fromCharCode(65 + item.correct)}) ${item.options[item.correct]}</strong>. ${item.explanation}`;
+        }
+
+        updateScore();
+    }
+
+    // ===== Update score board =====
+    function updateScore() {
+        document.getElementById('score').textContent = score;
+        document.getElementById('answered').textContent = answered;
+        const pct = (answered / totalQuestions) * 100;
+        document.getElementById('progressBar').style.width = pct + '%';
+
+        if (answered === totalQuestions) {
+            showFinalScore();
+        }
+    }
+
+    // ===== Show final score =====
+    function showFinalScore() {
+        const finalDiv = document.getElementById('finalScore');
+        finalDiv.classList.add('show');
+        document.getElementById('finalScoreValue').textContent = `${score} / ${totalQuestions}`;
+
+        let msg = '';
+        const pct = (score / totalQuestions) * 100;
+        if (pct === 100) msg = 'Perfect score! You really understand the Transformer.';
+        else if (pct >= 80) msg = 'Excellent! You have a strong understanding of the material.';
+        else if (pct >= 60) msg = 'Good job. Review the sections you missed and try again.';
+        else if (pct >= 40) msg = 'You are getting there. Re-read the walkthrough and try again.';
+        else msg = 'Keep at it. The walkthrough has everything you need — take it step by step.';
+        document.getElementById('finalMessage').textContent = msg;
+
+        finalDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // ===== Reset quiz =====
+    function resetQuiz() {
+        score = 0;
+        answered = 0;
+        userAnswers.fill(null);
+        document.getElementById('finalScore').classList.remove('show');
+        buildQuiz();
+        updateScore();
+        window.scrollTo({ top: document.querySelector('.quiz').offsetTop - 20, behavior: 'smooth' });
+    }
+
+    // ===== Initialize =====
+    buildQuiz();
+    updateScore();
+</script>
+</body>
+</html>
